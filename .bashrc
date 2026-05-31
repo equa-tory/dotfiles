@@ -239,7 +239,13 @@ gg() {
     grep -Rin --color=always -C 3 "$1" .
 }
 
-
+f() {
+  if [ -z "$1" ]; then
+    echo "usage: f <text>"
+    return 1
+  fi
+  find . -type f -iname "*$1*"
+}
 
 
 # ==============================
