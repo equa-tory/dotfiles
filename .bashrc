@@ -248,6 +248,17 @@ f() {
 }
 
 
+sedit() {
+    local service="$1"
+
+    if [[ -z "$service" ]]; then
+        echo "Usage: sedit <service>"
+        return 1
+    fi
+
+    sudo nano "/etc/systemd/system/${service}.service"
+}
+
 # ==============================
 # ALIASES - GENERAL
 # ==============================
