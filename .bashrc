@@ -312,6 +312,7 @@ alias srestart='$SUDO systemctl restart'
 alias senable='$SUDO systemctl enable'
 alias sdisable='$SUDO systemctl disable'
 alias sdaemon='$SUDO systemctl daemon-reload'
+alias slist='$SUDO ls /etc/systemd/system/ | grep .service'
 
 # ==============================
 # EDITORS
