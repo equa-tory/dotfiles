@@ -257,6 +257,7 @@ sedit() {
     fi
 
     sudo nano "/etc/systemd/system/${service}.service"
+    sudo systemctl daemon-reload
 }
 
 # ==============================
@@ -308,7 +309,7 @@ alias log='~/log.sh'
 alias sstatus='$SUDO systemctl status'
 alias sstart='$SUDO systemctl start'
 alias sstop='$SUDO systemctl stop'
-alias srestart='$SUDO systemctl restart'
+alias srestart='$SUDO systemctl restart && $SUDO systemctl status'
 alias senable='$SUDO systemctl enable'
 alias sdisable='$SUDO systemctl disable'
 alias sdaemon='$SUDO systemctl daemon-reload'
