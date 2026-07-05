@@ -260,6 +260,10 @@ sedit() {
     sudo systemctl daemon-reload
 }
 
+srestart() {
+  sudo systemctl restart "$1" && sudo systemctl status "$1"
+}
+
 # ==============================
 # ALIASES - GENERAL
 # ==============================
@@ -309,7 +313,7 @@ alias log='~/log.sh'
 alias sstatus='$SUDO systemctl status'
 alias sstart='$SUDO systemctl start'
 alias sstop='$SUDO systemctl stop'
-alias srestart='$SUDO systemctl restart && $SUDO systemctl status'
+# alias srestart='$SUDO systemctl restart'
 alias senable='$SUDO systemctl enable'
 alias sdisable='$SUDO systemctl disable'
 alias sdaemon='$SUDO systemctl daemon-reload'
