@@ -144,6 +144,19 @@ port() { $SUDO lsof -i :"$1"; }
 #	  find . -type f -iname "*$1*"
 #	}
 
+#export HTTP_PROXY="http://127.0.0.1:1081"
+#export HTTPS_PROXY="http://127.0.0.1:1081"
+#export NO_PROXY=""
+
+claude-xray() {
+    HTTPS_PROXY="http://127.0.0.1:1081" \
+    HTTP_PROXY="http://127.0.0.1:1081" \
+    https_proxy="http://127.0.0.1:1081" \
+    http_proxy="http://127.0.0.1:1081" \
+    NO_PROXY="" \
+    claude "$@"
+}
+
 
 # ==============================
 # ALIASES - GENERAL
@@ -282,4 +295,5 @@ eval "$(zoxide init zsh --cmd cd)"
 source <(fzf --zsh)
 
 
+export PATH="$HOME/.local/bin:$PATH"
 
