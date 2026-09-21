@@ -127,22 +127,22 @@ port() { $SUDO lsof -i :"$1"; }
 #mc()   { java -Xmx"$1"G -jar server.jar nogui; }
 
 
-gg() {
-    if [ -z "$1" ]; then
-        echo "usage: g <text>"
-        return 1
-    fi
-
-    grep -Rin --color=always -C 3 "$1" .
-}
-
-f() {
-  if [ -z "$1" ]; then
-    echo "usage: f <text>"
-    return 1
-  fi
-  find . -type f -iname "*$1*"
-}
+#	gg() {
+#	    if [ -z "$1" ]; then
+#		echo "usage: g <text>"
+#		return 1
+#	    fi
+#
+#	    grep -Rin --color=always -C 3 "$1" .
+#	}
+#
+#	f() {
+#	  if [ -z "$1" ]; then
+#	    echo "usage: f <text>"
+#	    return 1
+#	  fi
+#	  find . -type f -iname "*$1*"
+#	}
 
 
 # ==============================
