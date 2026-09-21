@@ -127,24 +127,6 @@ port() { $SUDO lsof -i :"$1"; }
 #mc()   { java -Xmx"$1"G -jar server.jar nogui; }
 
 
-#	gg() {
-#	    if [ -z "$1" ]; then
-#		echo "usage: g <text>"
-#		return 1
-#	    fi
-#
-#	    grep -Rin --color=always -C 3 "$1" .
-#	}
-#
-#	f() {
-#	  if [ -z "$1" ]; then
-#	    echo "usage: f <text>"
-#	    return 1
-#	  fi
-#	  find . -type f -iname "*$1*"
-#	}
-
-
 # ==============================
 # ALIASES - GENERAL
 # ==============================
@@ -165,7 +147,7 @@ alias r='source ~/.bashrc'
 # LS & DIRECTORY
 # ==============================
 alias l='ls'
-alias ll='ls -lAh'
+alias ll='eza -lah --group-directories-first --sort=modified'
 alias la='ls -a'
 alias md='mdd'
 alias desk='cd ~/Desktop'
@@ -228,14 +210,11 @@ alias n='nano'
 #alias rc='nano ~/.bashrc'
 #alias zrc='nano ~/.zshrc'
 rc() {
-  if [ -n "$ZSH_VERSION" ]; then
-    ${EDITOR:-nano} ~/.zshrc
-  elif [ -n "$BASH_VERSION" ]; then
-    ${EDITOR:-nano} ~/.bashrc
-  else
-    echo "Unsupported shell"
-    return 1
-  fi
+	if [[ "$OSTYPE" == "darwin"* ]]; then
+	  source ~/Developer/sh/dotfiles/shellrc
+	else
+	  source ~/git/dotfiles/shellrc
+	fi
 }
 
 
@@ -261,7 +240,20 @@ alias myip='curl ifconfig.me'
 # ==============================
 c
 
-eval "$(zoxide init zsh)"
+
+
+#eval "$(zoxide init zsh)"
 #eval "$(zoxide init bash)"
+eval "$(zoxide init "$(basename "$SHELL")")"
 
 source <(fzf --zsh)
+
+export PATH="$HOME/.local/bin:$PATH"
+claude-xray() {
+    HTTPS_PROXY="http://127.0.0.1:1081" \
+    HTTP_PROXY="http://127.0.0.1:1081" \
+    https_proxy="http://127.0.0.1:1081" \
+    http_proxy="http://127.0.0.1:1081" \
+    NO_PROXY="" \
+    claude "$@"
+}
