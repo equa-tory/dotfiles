@@ -127,6 +127,24 @@ port() { $SUDO lsof -i :"$1"; }
 #mc()   { java -Xmx"$1"G -jar server.jar nogui; }
 
 
+#	gg() {
+#	    if [ -z "$1" ]; then
+#		echo "usage: g <text>"
+#		return 1
+#	    fi
+#
+#	    grep -Rin --color=always -C 3 "$1" .
+#	}
+#
+#	f() {
+#	  if [ -z "$1" ]; then
+#	    echo "usage: f <text>"
+#	    return 1
+#	  fi
+#	  find . -type f -iname "*$1*"
+#	}
+
+
 # ==============================
 # ALIASES - GENERAL
 # ==============================
@@ -141,6 +159,8 @@ alias x='exit'
 alias q='exit'
 alias a='alias | grep'
 alias w='watch -n 1'
+
+unalias r 2>/dev/null
 r() {
   if [ -n "$ZSH_VERSION" ]; then
     source ~/.zshrc
@@ -170,10 +190,8 @@ alias sc='screen'
 alias scl='screen -list'
 alias ff='clear; neofetch'
 alias smi='nvidia-smi'
-alias gi='grep -i'
 alias g='rg'
 alias f='fd'
-alias gr='grep -r'
 alias nv='~/log.sh'
 alias log='~/log.sh'
 
@@ -216,13 +234,24 @@ fi
 alias n='nano'
 #alias rc='nano ~/.bashrc'
 #alias zrc='nano ~/.zshrc'
+
 rc() {
-	if [[ "$OSTYPE" == "darwin"* ]]; then
-	  source ~/Developer/sh/dotfiles/shellrc
-	else
-	  source ~/git/dotfiles/shellrc
-	fi
+  if [ "$(uname)" = "Darwin" ]; then
+    nvim ~/Developer/sh/dotfiles/shellrc
+  else
+    nvim ~/git/dotfiles/shellrc
+  fi
 }
+#  rc() {
+#    if [ -n "$ZSH_VERSION" ]; then
+#      ${EDITOR:-nvim} ~/.zshrc
+#    elif [ -n "$BASH_VERSION" ]; then
+#      ${EDITOR:-nvim} ~/.bashrc
+#    else
+#      echo "Unsupported shell"
+#      return 1
+#    fi
+#  }
 
 
 # ==============================
@@ -247,20 +276,10 @@ alias myip='curl ifconfig.me'
 # ==============================
 c
 
-
-
-#eval "$(zoxide init zsh)"
-#eval "$(zoxide init bash)"
-eval "$(zoxide init "$(basename "$SHELL")")"
+eval "$(zoxide init zsh --cmd cd)"
+#eval "$(zoxide init bash --cmd cd)"
 
 source <(fzf --zsh)
 
-export PATH="$HOME/.local/bin:$PATH"
-claude-xray() {
-    HTTPS_PROXY="http://127.0.0.1:1081" \
-    HTTP_PROXY="http://127.0.0.1:1081" \
-    https_proxy="http://127.0.0.1:1081" \
-    http_proxy="http://127.0.0.1:1081" \
-    NO_PROXY="" \
-    claude "$@"
-}
+
+
