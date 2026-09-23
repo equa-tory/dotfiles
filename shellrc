@@ -59,6 +59,7 @@ fi
 #	    *)           python3 "$cmd" "$@" ;;   # fallback: run python directly
 #	  esac
 #	}
+alias py='python3'
 alias vnv='source venv/bin/activate'
 alias vnvv='python3 -m venv venv && source venv/bin/activate'
 alias deac='deactivate'
