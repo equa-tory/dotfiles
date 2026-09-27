@@ -246,16 +246,16 @@ else
   alias v='vim'
 fi
 alias n='nano'
-#alias rc='nano ~/.bashrc'
+alias rc='nvim ~/.config/dotfiles/shellrc'
 #alias zrc='nano ~/.zshrc'
 
-rc() {
-  if [ "$(uname)" = "Darwin" ]; then
-    nvim ~/Developer/sh/dotfiles/shellrc
-  else
-    nvim ~/git/dotfiles/shellrc
-  fi
-}
+#  rc() {
+#    if [ "$(uname)" = "Darwin" ]; then
+#      nvim ~/Developer/sh/dotfiles/shellrc
+#    else
+#      nvim ~/git/dotfiles/shellrc
+#    fi
+#  }
 #  rc() {
 #    if [ -n "$ZSH_VERSION" ]; then
 #      ${EDITOR:-nvim} ~/.zshrc
