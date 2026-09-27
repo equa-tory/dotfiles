@@ -123,7 +123,7 @@ d() {
 # ==============================
 # MISC UTILS (kept from original)
 # ==============================
-#mdd()  { mkdir -p "$1" && cd "$1"; }
+mdd()  { mkdir -p "$1" && cd "$1"; }
 port() { $SUDO lsof -i :"$1"; }
 #mc()   { java -Xmx"$1"G -jar server.jar nogui; }
 
