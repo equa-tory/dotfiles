@@ -290,8 +290,7 @@ alias myip='curl ifconfig.me'
 # ==============================
 c
 
-eval "$(zoxide init zsh --cmd cd)"
-#eval "$(zoxide init bash --cmd cd)"
+eval "$(zoxide init "${SHELL##*/}" --cmd cd)"
 
 source <(fzf --zsh)
 
