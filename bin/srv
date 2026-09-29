@@ -1,0 +1,1990 @@
+#!/usr/bin/env bash
+# srv - small box manager. One file, no config repo, nothing to install but
+# this script - drop it in any dir on your PATH (~/.local/bin, /usr/local/bin).
+#
+#   srv                     menu (arrows / type to filter)
+#   srv live [edit|undo|reset]   live view: GPU, ollama, top, docker, tunnels, disk
+#   srv clean               pick junk to delete (docker images, old logs)
+#   srv space               disk usage report
+#   srv xray [import <vless://...>]   show/switch the outbound proxy
+#   srv frp [add|rm|on|off ...]       manage tunnels in ~/frp/frpc.toml
+#
+# Needs bash 4.4+. Optional: tmux (live view panes), python3 (xray, frp),
+# nvidia-smi / ollama / docker (their live sections say "not installed" if
+# missing). Everything that needs root uses sudo at the moment it needs it.
+#
+# Local state (per machine, never part of the script) lives in
+# ${SRV_STATE_DIR:-~/.local/state/srv}: live.conf (+ .prev for undo) and
+# xray-servers.json (your proxy links).
+# Overrides: SRV_DISKS="/ /mnt/x" (disks in live view), FRPC_TOML, XRAY_BIN,
+# XRAY_CONF, SERVERS_FILE.
+set -uo pipefail
+
+BOLD='\033[1m'; DIM='\033[2m'; CYAN='\033[0;36m'; GREEN='\033[0;32m'
+YELLOW='\033[1;33m'; RED='\033[0;31m'; RESET='\033[0m'
+h() { echo -e "\n${BOLD}${CYAN}== $* ==${RESET}"; }   # section header (live view has its own, no blank line)
+
+STATE_DIR="${SRV_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/srv}"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+
+# ---------------------------------------------------------------- ui widgets
+# Arrow-key menus in pure bash (no fzf/whiptail).
+#   choice=$(ui_menu "pick one:" "$default" "a" "b" "c")
+#   mapfile -t picked < <(ui_multi "pick some:" "$preselected" "a" "b" "c")
+#   ui_confirm "really?"
+# Menu chrome goes to stderr, only the answer to stdout. Fall back to a plain
+# numbered prompt when there's no real terminal.
+set -uo pipefail
+
+# Clears the screen for the interactive menu flow only - callers should never
+# use this around a plain typed command's output (srv frp, srv ports 8888,
+# anything that might be piped/redirected/scripted). A no-op when not a real
+# terminal, so it's always safe to call unconditionally from menu code.
+ui_clear() { _ui_is_tty && clear >&2; return 0; }
+
+# Checks fd 0 (keys) and fd 2 (where the menu chrome is drawn) - NOT fd 1.
+# Callers always use `choice=$(ui_menu ...)`, and command substitution always
+# turns stdout into a pipe even when the real terminal is fully interactive -
+# checking -t 1 here would make every real call see a "fake" non-tty and
+# permanently fall back to the plain numbered prompt.
+_ui_is_tty() { [[ -t 0 && -t 2 && "${TERM:-dumb}" != "dumb" ]]; }
+_ui_cursor_hide() { printf '\033[?25l' >&2; }
+_ui_cursor_show() { printf '\033[?25h' >&2; }
+
+# read one keypress, expanding arrow-key escape sequences (ESC [ A / B) into
+# a single 3-char token so callers can match it in one case arm.
+_ui_read_key() {
+  local key rest
+  IFS= read -rsn1 key
+  if [[ $key == $'\x1b' ]]; then
+    IFS= read -rsn2 -t 0.01 rest
+    key+="$rest"
+  fi
+  printf '%s' "$key"
+}
+
+# moves the cursor up over $1 drawn lines and blanks each one, leaving the
+# cursor back at the top of that block - shared by ui_menu/ui_multi's exit
+# paths (both the "confirmed" and "cancelled" cases redraw nothing after).
+_ui_clear_lines() {
+  local lines="$1" i
+  printf '\033[%dA' "$lines" >&2
+  for ((i = 0; i < lines; i++)); do printf '\033[2K\n' >&2; done
+  printf '\033[%dA' "$lines" >&2
+}
+
+# computes which indices of $1 (a nameref to an options array) match $2
+# (the current filter, "" = everything) into the nameref array $3. Matches
+# from the start of the option text, case-insensitive.
+_ui_filter_visible() {
+  local -n _fv_opts="$1"
+  local filter="$2"
+  local -n _fv_out="$3"
+  _fv_out=()
+  local i
+  if [[ -z "$filter" ]]; then
+    for i in "${!_fv_opts[@]}"; do _fv_out+=("$i"); done
+    return 0
+  fi
+  local lf="${filter,,}" lo
+  for i in "${!_fv_opts[@]}"; do
+    lo="${_fv_opts[$i],,}"
+    [[ "$lo" == "$lf"* ]] && _fv_out+=("$i")
+  done
+}
+
+ui_menu() {
+  local title="$1" default="$2"; shift 2
+  local -a opts=("$@")
+  local n=${#opts[@]}
+  (( n == 0 )) && return 1
+
+  if ! _ui_is_tty; then
+    echo -e "$title" >&2
+    local i
+    for i in "${!opts[@]}"; do printf "  %d) %s\n" "$((i + 1))" "${opts[$i]}" >&2; done
+    local reply
+    read -r -p "choose [1-$n, q to cancel]: " reply
+    [[ "$reply" == "q" ]] && return 1
+    if [[ "$reply" =~ ^[0-9]+$ ]] && (( reply >= 1 && reply <= n )); then
+      echo "${opts[$((reply - 1))]}"; return 0
+    fi
+    echo "invalid choice" >&2; return 1
+  fi
+
+  local sel=0 key drawn=0 i filter=""
+  if [[ -n "$default" ]]; then
+    for i in "${!opts[@]}"; do [[ "${opts[$i]}" == "$default" ]] && { sel=$i; break; }; done
+  fi
+  trap '_ui_cursor_show; printf "\n" >&2; exit 130' INT TERM
+  _ui_cursor_hide
+  local -a visible
+  local total_lines=$((n + 2))
+  while true; do
+    _ui_filter_visible opts "$filter" visible
+    local vn=${#visible[@]}
+    if (( vn == 0 )); then sel=0; elif (( sel >= vn )); then sel=$((vn - 1)); fi
+
+    (( drawn )) && printf '\033[%dA' "$total_lines" >&2
+    if [[ -n "$filter" ]]; then
+      printf '\033[2K%b  %bfilter: %s%b\n' "$title" "$DIM" "$filter" "$RESET" >&2
+    else
+      printf '\033[2K%b\n' "$title" >&2
+    fi
+    local row oi label num
+    for ((row = 0; row < n; row++)); do
+      if (( row < vn )); then
+        oi="${visible[$row]}"; label="${opts[$oi]}"
+        num=""; (( row < 9 )) && num="$((row + 1)))"
+        if (( row == sel )); then
+          printf '\033[2K%b▸ %2s %s%b\n' "$CYAN" "$num" "$label" "$RESET" >&2
+        else
+          printf '\033[2K  %2s %s\n' "$num" "$label" >&2
+        fi
+      else
+        printf '\033[2K\n' >&2
+      fi
+    done
+    printf '\033[2K%b↑↓ move · 1-9 pick · type to filter · enter choose · q back%b\n' "$DIM" "$RESET" >&2
+    drawn=1
+
+    key="$(_ui_read_key)"
+    case "$key" in
+      $'\x1b[A') (( vn > 0 )) && (( sel = (sel - 1 + vn) % vn )) ;;
+      $'\x1b[B') (( vn > 0 )) && (( sel = (sel + 1) % vn )) ;;
+      k) [[ -z "$filter" ]] && { (( vn > 0 )) && (( sel = (sel - 1 + vn) % vn )); } || filter+="$key" ;;
+      j) [[ -z "$filter" ]] && { (( vn > 0 )) && (( sel = (sel + 1) % vn )); } || filter+="$key" ;;
+      [1-9])
+        i=$((key - 1))
+        if (( i < vn )); then
+          _ui_clear_lines "$total_lines"
+          _ui_cursor_show; trap - INT TERM
+          echo "${opts[${visible[$i]}]}"; return 0
+        fi
+        ;;
+      ""|$'\n'|$'\r')
+        (( vn == 0 )) && continue
+        _ui_clear_lines "$total_lines"
+        _ui_cursor_show; trap - INT TERM
+        echo "${opts[${visible[$sel]}]}"; return 0
+        ;;
+      q|Q)
+        if [[ -z "$filter" ]]; then
+          _ui_clear_lines "$total_lines"
+          _ui_cursor_show; trap - INT TERM
+          return 1
+        fi
+        filter+="$key"
+        ;;
+      $'\x1b')
+        if [[ -n "$filter" ]]; then
+          filter=""
+        else
+          _ui_clear_lines "$total_lines"
+          _ui_cursor_show; trap - INT TERM
+          return 1
+        fi
+        ;;
+      $'\x7f'|$'\x08')
+        filter="${filter%?}"
+        ;;
+      *)
+        [[ "$key" =~ ^[[:print:]]$ ]] && filter+="$key"
+        ;;
+    esac
+  done
+}
+
+ui_multi() {
+  local title="$1" preselected="$2"; shift 2
+  local -a opts=("$@")
+  local n=${#opts[@]}
+  (( n == 0 )) && return 1
+
+  if ! _ui_is_tty; then
+    echo -e "$title" >&2
+    local i
+    for i in "${!opts[@]}"; do printf "  %d) %s\n" "$((i + 1))" "${opts[$i]}" >&2; done
+    echo -e "${DIM}numbers separated by spaces, 'a' for all, blank to cancel${RESET}" >&2
+    local reply; read -r -p "> " reply
+    [[ -z "$reply" ]] && return 2
+    if [[ "$reply" == "a" ]]; then printf '%s\n' "${opts[@]}"; return 0; fi
+    local idx; local -a picked=()
+    for idx in $reply; do
+      [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= n )) && picked+=("${opts[$((idx - 1))]}")
+    done
+    (( ${#picked[@]} == 0 )) && return 1
+    printf '%s\n' "${picked[@]}"; return 0
+  fi
+
+  local -a checked=()
+  local i p
+  for ((i = 0; i < n; i++)); do
+    checked[i]=0
+    if [[ -n "$preselected" ]]; then
+      while IFS= read -r p; do
+        [[ "$p" == "${opts[$i]}" ]] && checked[i]=1
+      done <<< "$preselected"
+    fi
+  done
+  local sel=0 key drawn=0 cnt filter=""
+  trap '_ui_cursor_show; printf "\n" >&2; exit 130' INT TERM
+  _ui_cursor_hide
+  local -a visible
+  local total_lines=$((n + 3))
+  while true; do
+    _ui_filter_visible opts "$filter" visible
+    local vn=${#visible[@]}
+    if (( vn == 0 )); then sel=0; elif (( sel >= vn )); then sel=$((vn - 1)); fi
+
+    (( drawn )) && printf '\033[%dA' "$total_lines" >&2
+    if [[ -n "$filter" ]]; then
+      printf '\033[2K%b  %bfilter: %s%b\n' "$title" "$DIM" "$filter" "$RESET" >&2
+    else
+      printf '\033[2K%b\n' "$title" >&2
+    fi
+    local row oi box label num
+    for ((row = 0; row < n; row++)); do
+      if (( row < vn )); then
+        oi="${visible[$row]}"; label="${opts[$oi]}"
+        box='[ ]'; (( checked[oi] )) && box='[x]'
+        num=""; (( row < 9 )) && num="$((row + 1)))"
+        if (( row == sel )); then
+          printf '\033[2K%b▸ %2s %s %s%b\n' "$CYAN" "$num" "$box" "$label" "$RESET" >&2
+        else
+          printf '\033[2K  %2s %s %s\n' "$num" "$box" "$label" >&2
+        fi
+      else
+        printf '\033[2K\n' >&2
+      fi
+    done
+    cnt=0; for i in "${!checked[@]}"; do (( checked[i] )) && ((cnt++)); done
+    if [[ -n "$filter" ]]; then
+      printf '\033[2K%b%d selected  filter: %s%b\n' "$DIM" "$cnt" "$filter" "$RESET" >&2
+    else
+      printf '\033[2K%b%d selected%b\n' "$DIM" "$cnt" "$RESET" >&2
+    fi
+    printf '\033[2K%bspace tick · 1-9 tick · a all · n none · type to filter · enter confirm · q back%b\n' "$DIM" "$RESET" >&2
+    drawn=1
+
+    key="$(_ui_read_key)"
+    case "$key" in
+      $'\x1b[A') (( vn > 0 )) && (( sel = (sel - 1 + vn) % vn )) ;;
+      $'\x1b[B') (( vn > 0 )) && (( sel = (sel + 1) % vn )) ;;
+      k) [[ -z "$filter" ]] && { (( vn > 0 )) && (( sel = (sel - 1 + vn) % vn )); } || filter+="$key" ;;
+      j) [[ -z "$filter" ]] && { (( vn > 0 )) && (( sel = (sel + 1) % vn )); } || filter+="$key" ;;
+      " ")
+        (( vn > 0 )) && { oi="${visible[$sel]}"; (( checked[oi] = checked[oi] ? 0 : 1 )); }
+        ;;
+      [1-9])
+        i=$((key - 1))
+        if (( i < vn )); then
+          sel=$i; oi="${visible[$i]}"
+          (( checked[oi] = checked[oi] ? 0 : 1 ))
+        fi
+        ;;
+      a|A)
+        if [[ -z "$filter" ]]; then for ((i = 0; i < n; i++)); do checked[i]=1; done; else filter+="$key"; fi
+        ;;
+      n|N)
+        if [[ -z "$filter" ]]; then for ((i = 0; i < n; i++)); do checked[i]=0; done; else filter+="$key"; fi
+        ;;
+      ""|$'\n'|$'\r')
+        _ui_clear_lines "$total_lines"
+        _ui_cursor_show; trap - INT TERM
+        local any=0
+        for i in "${!checked[@]}"; do (( checked[i] )) && { echo "${opts[$i]}"; any=1; }; done
+        (( any )) && return 0 || return 1
+        ;;
+      q|Q)
+        if [[ -z "$filter" ]]; then
+          _ui_clear_lines "$total_lines"
+          _ui_cursor_show; trap - INT TERM
+          return 2
+        fi
+        filter+="$key"
+        ;;
+      $'\x1b')
+        if [[ -n "$filter" ]]; then
+          filter=""
+        else
+          _ui_clear_lines "$total_lines"
+          _ui_cursor_show; trap - INT TERM
+          return 2
+        fi
+        ;;
+      $'\x7f'|$'\x08')
+        filter="${filter%?}"
+        ;;
+      *)
+        [[ "$key" =~ ^[[:print:]]$ ]] && filter+="$key"
+        ;;
+    esac
+  done
+}
+
+ui_confirm() {
+  local prompt="$1" key
+  if ! _ui_is_tty; then
+    local reply
+    read -r -p "$prompt [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]]
+    return
+  fi
+  printf '%s [y/n] ' "$prompt" >&2
+  IFS= read -rsn1 key
+  printf '%s\n' "${key:-n}" >&2
+  [[ "$key" =~ ^[Yy]$ ]]
+}
+
+# ---------------------------------------------------------------- live view
+# One tmux pane per section when tmux exists (a slow section only blanks its
+# own pane), otherwise one redrawing loop. Keys: q quit, e edit, u undo the
+# last edit. Not a TTY: prints one snapshot and exits.
+LIVE_CONF="$STATE_DIR/live.conf"
+LIVE_PREV="$STATE_DIR/live.conf.prev"   # config before the last change - see undo_conf
+DEFAULT_CONF=$'gpu\nollama\ntop'
+# a custom line's command gets this long (seconds) and this many lines - a
+# slow or chatty command must never freeze or scroll the whole view.
+CUSTOM_TIMEOUT=3
+CUSTOM_MAX_LINES=12
+
+lh() { echo -e "${BOLD}${CYAN}== $* ==${RESET}"; }
+
+# built-in section catalog - id (used in live.conf) + label (shown when editing)
+CATALOG_IDS=(gpu ollama top docker tunnels disk)
+CATALOG_LABELS=(
+  "GPU (util, memory, temp, power)"
+  "Ollama (loaded models)"
+  "Top processes (real CPU%, not ps's lifetime average)"
+  "Docker (name, status, ports)"
+  "Tunnels + failed units (named)"
+  "Disk usage (used / free / total)"
+)
+
+# mount points for the disk section: $SRV_DISKS, else every real mounted fs
+load_disks() {
+  WATCH_DISKS=()
+  local m
+  if [[ -n "${SRV_DISKS:-}" ]]; then
+    read -ra WATCH_DISKS <<<"$SRV_DISKS"
+    return
+  fi
+  while IFS= read -r m; do
+    [[ -n "$m" && "$m" != "/boot" && "$m" != /boot/* ]] && WATCH_DISKS+=("$m")
+  done < <(findmnt -rno TARGET -t ext2,ext3,ext4,xfs,btrfs,cifs,nfs,nfs4,ntfs,vfat,exfat 2>/dev/null)
+  (( ${#WATCH_DISKS[@]} == 0 )) && WATCH_DISKS=(/)
+}
+
+catalog_label_for() {
+  local id="$1" i
+  for i in "${!CATALOG_IDS[@]}"; do
+    [[ "${CATALOG_IDS[$i]}" == "$id" ]] && { echo "${CATALOG_LABELS[$i]}"; return; }
+  done
+  echo "$id"
+}
+
+catalog_id_for_label() {
+  local label="$1" i
+  for i in "${!CATALOG_LABELS[@]}"; do
+    [[ "${CATALOG_LABELS[$i]}" == "$label" ]] && { echo "${CATALOG_IDS[$i]}"; return; }
+  done
+  echo ""
+}
+
+ensure_conf() {
+  mkdir -p "$STATE_DIR"
+  # reseed on "missing" AND on "exists but has no real section id" (e.g.
+  # unchecking everything in the editor with no custom lines used to write
+  # two blank lines - see edit_config's own fix below for why that can't
+  # happen going forward, this is the self-heal for a file already in that
+  # state, or hand-edited empty) - a real dead end otherwise, since
+  # tmux_live() refuses to open any pane with zero sections enabled and
+  # there'd be nowhere left to press 'e'.
+  if [[ ! -s "$LIVE_CONF" ]] || ! grep -q '[^[:space:]]' "$LIVE_CONF" 2>/dev/null; then
+    printf '%s\n' "$DEFAULT_CONF" > "$LIVE_CONF"
+  fi
+}
+
+# the only way live.conf gets written: config on stdin, refuses an empty one,
+# writes via a temp file (a crash can't leave it half-written) and keeps the
+# config it replaces as live.conf.prev so `u` / `srv live undo` can go back.
+save_conf() {
+  local tmp="$LIVE_CONF.tmp.$$"
+  mkdir -p "$STATE_DIR"
+  cat > "$tmp" || { rm -f "$tmp"; return 1; }
+  if ! grep -q '[^[:space:]]' "$tmp"; then
+    rm -f "$tmp"
+    echo "refusing to save an empty live-watch config" >&2
+    return 1
+  fi
+  if [[ -s "$LIVE_CONF" ]] && ! cmp -s "$LIVE_CONF" "$tmp"; then
+    cp -f "$LIVE_CONF" "$LIVE_PREV"
+  fi
+  mv -f "$tmp" "$LIVE_CONF"
+}
+
+# swaps live.conf with live.conf.prev - so undoing twice is a redo.
+undo_conf() {
+  if [[ ! -s "$LIVE_PREV" ]]; then
+    echo "nothing to undo - no earlier live-watch config saved" >&2
+    return 1
+  fi
+  local tmp="$LIVE_CONF.swap.$$"
+  cp -f "$LIVE_CONF" "$tmp" 2>/dev/null
+  mv -f "$LIVE_PREV" "$LIVE_CONF"
+  [[ -f "$tmp" ]] && mv -f "$tmp" "$LIVE_PREV"
+  echo "restored the previous live-watch config (run undo again to redo)"
+}
+
+reset_conf() {
+  printf '%s\n' "$DEFAULT_CONF" | save_conf && echo "live-watch reset to defaults (undo brings back the old one)"
+}
+
+# Full-screen / interactive programs can't be a live section: they draw their
+# own screen and grab the keyboard, so the view freezes and q/e stop working.
+# Prints a reason and returns 0 if the command is one of them.
+_custom_blocked() {
+  local cmd="$1" first rest
+  first="${cmd#"${cmd%%[![:space:]]*}"}"
+  [[ "$first" == sudo\ * ]] && first="${first#sudo }"
+  rest="${first#* }"; first="${first%% *}"; first="${first##*/}"
+  case "$first" in
+    top)
+      echo "'top' is full-screen - the built-in Top section already covers it"; return 0 ;;
+    htop|btop|bpytop|atop|glances|nvtop|nvitop|iotop|iftop|nload|vim|vi|nano|less|more|man|mc|tmux|screen|ssh|watch)
+      echo "'$first' is interactive/full-screen and would freeze the view - use a one-shot command instead"; return 0 ;;
+    tail|journalctl)
+      if [[ " $rest " == *" -f "* || " $rest " == *" --follow "* ]]; then
+        echo "'$first -f' never finishes - drop the -f"; return 0
+      fi ;;
+  esac
+  return 1
+}
+
+_term_cols() {
+  local c
+  c="$(stty size 2>/dev/null </dev/tty | awk '{print $2}')"
+  echo "${c:-80}"
+}
+
+section_gpu() {
+  lh "GPU"
+  if ! command -v nvidia-smi &>/dev/null; then
+    echo -e "  ${DIM}no nvidia-smi found on this box${RESET}"
+    return
+  fi
+  local name util mem_used mem_total temp power_draw power_limit
+  while IFS=',' read -r name util mem_used mem_total temp power_draw power_limit; do
+    name="${name## }"; util="${util## }"; mem_used="${mem_used## }"; mem_total="${mem_total## }"
+    temp="${temp## }"; power_draw="${power_draw## }"; power_limit="${power_limit## }"
+    printf "  %-16s %4s%%  %s/%sM  %s°C  %.0f/%.0fW\n" \
+      "$name" "$util" "$mem_used" "$mem_total" "$temp" "$power_draw" "$power_limit"
+  done < <(nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit \
+             --format=csv,noheader,nounits 2>/dev/null)
+}
+
+section_ollama() {
+  lh "OLLAMA"
+  if ! command -v ollama &>/dev/null; then
+    echo -e "  ${DIM}not installed${RESET}"; return
+  fi
+  local out
+  out="$(ollama ps 2>/dev/null | tail -n +2)"
+  if [[ -z "$out" ]]; then
+    echo -e "  ${DIM}no models loaded${RESET}"
+  else
+    echo "$out" | sed 's/^/  /'
+  fi
+}
+
+# `ps`'s %CPU is a lifetime average (cputime / total elapsed time), which is
+# why `ps` itself used to show up at ~1000% - it's brand new, so that ratio
+# is huge and means nothing "live". `top -bn2` takes two samples 0.2s apart
+# and computes a real delta between them - the second batch is the real
+# number, the first is meaningless (no prior sample to diff against).
+section_top() {
+  lh "TOP PROCESSES"
+  local sampled
+  sampled="$(top -bn2 -d 0.2 2>/dev/null | awk '
+    /^top -/ { batch++; next }
+    batch == 2 && $0 ~ /^ *[0-9]+/ { print }
+  ')"
+  if [[ -z "$sampled" ]]; then
+    echo -e "  ${DIM}top unavailable, falling back to ps (lifetime average, not live):${RESET}"
+    ps -eo comm,pcpu --sort=-pcpu --no-headers 2>/dev/null | head -5 | \
+      awk '{printf "  %-16s %5s%%\n", $1, $2}'
+    return
+  fi
+  echo "$sampled" | awk -v cores="$(nproc 2>/dev/null || echo 1)" '
+    $NF == "top" || $NF == "ps" { next }
+    {
+      cpu = $9; cmd = $NF; extra = ""
+      if (cpu + 0 >= 100) extra = sprintf("  (%.1f/%d cores)", cpu / 100, cores)
+      printf "  %-16s %6.1f%%%s\n", cmd, cpu, extra
+      n++
+    }
+    n >= 5 { exit }
+  '
+}
+
+# "Up 8 hours (healthy)" -> "up 8h ✓", "Restarting (1) 11 seconds ago" ->
+# "restart×1", "Exited (0) 2 hours ago" -> "exited(0) 2h" - one word instead
+# of a whole sentence, so a container's row fits on one line.
+_docker_status_short() {
+  local raw="$1" out n unit u
+  # docker's own duration humanizer rounds the 1-2x-unit range to "About a
+  # minute"/"About an hour"/"About a day" instead of a number - handle
+  # those before the numeric pattern below, or "Up About an hour" falls
+  # through to the else branch unshortened.
+  if [[ "$raw" =~ ^Up\ Less\ than\ a\ second ]]; then
+    out="up <1s"
+    [[ "$raw" == *"(healthy)"* ]] && out+=" ✓"
+    [[ "$raw" == *"(unhealthy)"* ]] && out+=" ✗"
+  elif [[ "$raw" =~ ^Up\ About\ an?\ (minute|hour|day) ]]; then
+    unit="${BASH_REMATCH[1]}"
+    case "$unit" in minute) u=m ;; hour) u=h ;; day) u=d ;; esac
+    out="up ~1${u}"
+    [[ "$raw" == *"(healthy)"* ]] && out+=" ✓"
+    [[ "$raw" == *"(unhealthy)"* ]] && out+=" ✗"
+  elif [[ "$raw" =~ ^Up\ ([0-9]+)\ (second|minute|hour|day|week)s? ]]; then
+    n="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+    case "$unit" in second) u=s ;; minute) u=m ;; hour) u=h ;; day) u=d ;; week) u=w ;; esac
+    out="up ${n}${u}"
+    [[ "$raw" == *"(healthy)"* ]] && out+=" ✓"
+    [[ "$raw" == *"(unhealthy)"* ]] && out+=" ✗"
+  elif [[ "$raw" =~ ^Restarting\ \(([0-9]+)\) ]]; then
+    out="restart×${BASH_REMATCH[1]}"
+  elif [[ "$raw" =~ ^Exited\ \(([0-9]+)\)\ ([0-9]+)\ (second|minute|hour|day|week)s?\ ago ]]; then
+    n="${BASH_REMATCH[2]}"; unit="${BASH_REMATCH[3]}"
+    case "$unit" in second) u=s ;; minute) u=m ;; hour) u=h ;; day) u=d ;; week) u=w ;; esac
+    out="exited(${BASH_REMATCH[1]}) ${n}${u}"
+  elif [[ "$raw" == Created* ]]; then
+    out="created"
+  else
+    out="$raw"
+  fi
+  echo "$out"
+}
+
+# host-side ports only, deduped (the 0.0.0.0/[::] pair for the same port
+# collapses to one entry), sorted numerically. "host" for a host-network
+# container. A published-nothing-but-exposed port (no "->" in docker's
+# own .Ports string, e.g. n8n mid-bug: "5678/tcp") is flagged
+# "!unpublished" instead of silently looking the same as a real port -
+# that flag is exactly what would have caught the n8n bug on sight.
+_docker_port_summary() {
+  local ports="$1" net="$2"
+  [[ "$net" == "host" ]] && { echo "host"; return; }
+  [[ -z "$ports" ]] && { echo "-"; return; }
+  local -a hostports=() unpub=()
+  local IFS=',' p hp cp
+  for p in $ports; do
+    p="${p# }"
+    [[ -z "$p" ]] && continue
+    if [[ "$p" == *"->"* ]]; then
+      hp="${p%%->*}"; hp="${hp##*:}"
+      printf '%s\n' "${hostports[@]}" | grep -qxF "$hp" || hostports+=("$hp")
+    else
+      cp="${p%%/*}"
+      printf '%s\n' "${unpub[@]}" | grep -qxF "$cp" || unpub+=("$cp")
+    fi
+  done
+  local out=""
+  (( ${#hostports[@]} > 0 )) && out="$(printf '%s\n' "${hostports[@]}" | sort -n | paste -sd, -)"
+  if (( ${#unpub[@]} > 0 )); then
+    local u; u="$(printf '%s\n' "${unpub[@]}" | sort -n | paste -sd, -)"
+    [[ -n "$out" ]] && out+="  "
+    out+="${u} !unpublished"
+  fi
+  [[ -z "$out" ]] && out="-"
+  echo "$out"
+}
+
+section_docker() {
+  lh "DOCKER"
+  if ! command -v docker &>/dev/null; then
+    echo -e "  ${DIM}not installed${RESET}"; return
+  fi
+  local name status net ports short pmsg
+  while IFS=$'\t' read -r name status net ports; do
+    [[ -z "$name" ]] && continue
+    short="$(_docker_status_short "$status")"
+    pmsg="$(_docker_port_summary "$ports" "$net")"
+    printf "  %-14s %-12s %s\n" "$name" "$short" "$pmsg"
+  done < <(docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Networks}}\t{{.Ports}}' 2>/dev/null | head -8)
+}
+
+section_tunnels() {
+  lh "TUNNELS"
+  local frp xray
+  frp="$(systemctl is-active frp 2>/dev/null || true)"; frp="${frp:-unknown}"
+  xray="$(systemctl is-active xray 2>/dev/null || true)"; xray="${xray:-unknown}"
+  printf "  frp: %-10s xray: %-10s\n" "$frp" "$xray"
+
+  local -a names=()
+  local u
+  while IFS= read -r u; do names+=("$u"); done < <(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | sed 's/\.service$//')
+  local n=${#names[@]}
+  if (( n == 0 )); then
+    echo -e "  ${GREEN}0 failed units${RESET}"
+  else
+    local shown="${names[0]}"
+    (( n >= 2 )) && shown+=", ${names[1]}"
+    (( n > 2 )) && shown+=" (+$((n - 2)) more)"
+    echo -e "  ${RED}${n} failed: ${shown}${RESET}"
+  fi
+}
+
+section_disk() {
+  lh "DISK"
+  local d fstype tag size used avail pct
+  for d in "${WATCH_DISKS[@]}"; do
+    # an autofs mount (like our cifs share) shows as TWO stacked lines
+    # (autofs, then the real fstype once triggered) - the last line is
+    # always the one that actually answers "what kind of filesystem is
+    # this really", tail -1 to skip past autofs's stacking line.
+    fstype="$(findmnt -rno FSTYPE "$d" 2>/dev/null | tail -1)"
+    if [[ -z "$fstype" ]]; then
+      printf "  %-12s %b(unreachable)%b\n" "$d" "$DIM" "$RESET"
+      continue
+    fi
+    tag=""
+    case "$fstype" in cifs|nfs|nfs4) tag=" (remote)" ;; esac
+    read -r size used avail pct _ < <(df -h --output=size,used,avail,pcent "$d" 2>/dev/null | tail -1)
+    printf "  %-12s%-9s %5s used  %5s free  of %5s  (%s)\n" "$d" "$tag" "$used" "$avail" "$size" "$pct"
+  done
+}
+
+# Runs one custom command safely: never through eval in this shell (an `exit`
+# or `cd` in it would hit the live view itself), no stdin (it can't eat the
+# q/e/u keys), hard time limit. Not in a subshell on purpose - leaves the raw
+# output in _CUSTOM_OUT and the exit code in _CUSTOM_RC (124 = timed out).
+_custom_exec() {
+  _CUSTOM_OUT="$(TERM=dumb timeout -s KILL "$CUSTOM_TIMEOUT" bash -c "$1" </dev/null 2>&1)"
+  _CUSTOM_RC=$?
+  (( _CUSTOM_RC == 137 )) && _CUSTOM_RC=124
+  return 0
+}
+
+# stdin -> indented, escape codes stripped, capped to CUSTOM_MAX_LINES lines
+# and the terminal width.
+_custom_format() {
+  local cols; cols="$(_term_cols)"
+  LC_ALL=C sed -e 's/\x1b\[[0-9;?]*[ -\/]*[@-~]//g' | LC_ALL=C tr -d '\000-\010\013-\037' | \
+    awk -v max="$CUSTOM_MAX_LINES" -v cols="$cols" '
+      NR <= max { print "  " substr($0, 1, cols - 2); next }
+      { extra++ }
+      END { if (extra) printf "  ... (+%d more lines)\n", extra }
+    '
+}
+
+section_custom() {
+  local label="$1" cmd="$2" reason
+  lh "$label"
+  if reason="$(_custom_blocked "$cmd")"; then
+    echo -e "  ${RED}skipped:${RESET} ${DIM}${reason}${RESET}"
+    echo -e "  ${DIM}press e to remove it, or u to undo the last change${RESET}"
+    return
+  fi
+  _custom_exec "$cmd"
+  if (( _CUSTOM_RC == 124 )); then
+    echo -e "  ${RED}timed out after ${CUSTOM_TIMEOUT}s${RESET} ${DIM}- press e to remove it, or u to undo${RESET}"
+  elif [[ -z "$_CUSTOM_OUT" ]]; then
+    echo -e "  ${DIM}(no output$( (( _CUSTOM_RC != 0 )) && echo ", exit $_CUSTOM_RC"))${RESET}"
+  else
+    printf '%s\n' "$_CUSTOM_OUT" | _custom_format
+    (( _CUSTOM_RC != 0 )) && echo -e "  ${DIM}(exit $_CUSTOM_RC)${RESET}"
+  fi
+}
+
+render_section() {
+  local id="$1"
+  case "$id" in
+    gpu)      section_gpu ;;
+    ollama)   section_ollama ;;
+    top)      section_top ;;
+    docker)   section_docker ;;
+    tunnels)  section_tunnels ;;
+    disk)     section_disk ;;
+    custom:*)
+      local rest="${id#custom:}"
+      section_custom "${rest%%:*}" "${rest#*:}"
+      ;;
+  esac
+}
+
+# plain text of the whole frame - used for the non-tty snapshot and as the
+# thing paint() wraps in cursor-home/clear-to-end escapes.
+render_frame() {
+  echo -e "${BOLD}live${RESET}  ${DIM}(q quit, e edit, u undo last edit)${RESET}"
+  echo
+  local id
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    render_section "$id"
+  done < "$LIVE_CONF"
+}
+
+# writes a whole frame in one shot - cursor to top-left, the frame's text,
+# then clear-to-end-of-screen - instead of `clear` (blank the whole screen)
+# then redrawing section by section, which is what used to cause a visible
+# flash on every refresh while the slower sections were still gathering data.
+paint() {
+  local text; text="$(render_frame)"
+  # \033[K on every line: a line shorter than last frame's would otherwise
+  # keep the old line's tail
+  printf '\033[H%s\033[J' "${text//$'\n'/$'\033[K\n'}"
+}
+
+# ui_multi checkboxes over the built-in catalog (pre-checked from the
+# current config), then loop offering to add/remove custom command lines.
+# Nothing is written until the very end, and q/Esc anywhere before that
+# leaves the saved config untouched. Writes live.conf via save_conf (keeps
+# the old one for undo): built-ins first (catalog order), custom lines after,
+# in the order they were added.
+edit_config() {
+  ensure_conf
+  if ! _ui_is_tty; then
+    echo "srv live edit needs an interactive terminal" >&2
+    return 1
+  fi
+
+  local -a enabled_ids=() custom_lines=()
+  local line
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if [[ "$line" == custom:* ]]; then
+      custom_lines+=("$line")
+    else
+      enabled_ids+=("$line")
+    fi
+  done < "$LIVE_CONF"
+
+  local preselected="" id
+  for id in "${enabled_ids[@]}"; do
+    preselected+="$(catalog_label_for "$id")"$'\n'
+  done
+
+  # $(...) rather than mapfile < <(...) so the exit code survives: 2 means
+  # q/Esc (cancel - keep everything as it was), 1 just means none ticked.
+  local picked rc
+  picked="$(ui_multi "which built-in sections?" "$preselected" "${CATALOG_LABELS[@]}")"
+  rc=$?
+  if (( rc == 2 )); then
+    echo -e "${DIM}cancelled - nothing changed${RESET}"
+    return 0
+  fi
+  local -a new_ids=()
+  local label
+  while IFS= read -r label; do
+    [[ -z "$label" ]] && continue
+    id="$(catalog_id_for_label "$label")"
+    [[ -n "$id" ]] && new_ids+=("$id")
+  done <<< "$picked"
+
+  echo -e "${DIM}custom lines: run any one-line shell command as its own section${RESET}"
+  echo -e "${DIM}(one-shot commands only - no htop/top/watch/tail -f; ${CUSTOM_TIMEOUT}s limit, ${CUSTOM_MAX_LINES} lines shown)${RESET}"
+  local cl rest
+  while (( ${#custom_lines[@]} > 0 )); do
+    echo "current custom lines:"
+    for cl in "${custom_lines[@]}"; do
+      rest="${cl#custom:}"
+      echo "  - ${rest%%:*}: ${rest#*:}"
+    done
+    ui_confirm "remove one?" || break
+    local -a display=()
+    for cl in "${custom_lines[@]}"; do
+      rest="${cl#custom:}"
+      display+=("${rest%%:*}")
+    done
+    local to_remove
+    to_remove="$(ui_menu "remove which?" "" "${display[@]}")" || continue
+    local -a kept=()
+    local removed=0
+    for cl in "${custom_lines[@]}"; do
+      rest="${cl#custom:}"
+      if (( ! removed )) && [[ "${rest%%:*}" == "$to_remove" ]]; then
+        removed=1
+        continue
+      fi
+      kept+=("$cl")
+    done
+    custom_lines=("${kept[@]}")
+  done
+  while ui_confirm "add a custom line?"; do
+    local clabel ccmd reason keep
+    read -r -p "label: " clabel
+    read -r -p "command: " ccmd
+    clabel="${clabel//:/-}"   # ':' separates the fields in live.conf
+    clabel="${clabel#"${clabel%%[![:space:]]*}"}"; clabel="${clabel%"${clabel##*[![:space:]]}"}"
+    if [[ -z "$clabel" || -z "${ccmd//[[:space:]]/}" ]]; then
+      echo -e "${DIM}need both a label and a command - skipped${RESET}"
+      continue
+    fi
+    if reason="$(_custom_blocked "$ccmd")"; then
+      echo -e "${RED}not added:${RESET} $reason"
+      continue
+    fi
+    # try it once before saving, so a typo shows up here and not as a
+    # broken pane later.
+    _custom_exec "$ccmd"
+    echo -e "${DIM}test run:${RESET}"
+    if (( _CUSTOM_RC == 124 )); then
+      echo -e "  ${RED}timed out after ${CUSTOM_TIMEOUT}s${RESET}"
+    elif [[ -z "$_CUSTOM_OUT" ]]; then
+      echo -e "  ${DIM}(no output, exit $_CUSTOM_RC)${RESET}"
+    else
+      printf '%s\n' "$_CUSTOM_OUT" | _custom_format
+      (( _CUSTOM_RC != 0 )) && echo -e "  ${RED}(exit $_CUSTOM_RC)${RESET}"
+    fi
+    if (( _CUSTOM_RC != 0 )); then
+      ui_confirm "it didn't run cleanly - add it anyway?" || continue
+    else
+      ui_confirm "looks right - add it?" || continue
+    fi
+    custom_lines+=("custom:${clabel}:${ccmd}")
+  done
+
+  # nothing enabled at all would leave the view with no pane to press 'e' in
+  # (save_conf refuses that too) - keep whatever was on disk instead.
+  if [[ ${#new_ids[@]} -eq 0 && ${#custom_lines[@]} -eq 0 ]]; then
+    echo -e "${DIM}nothing picked - keeping your current configuration${RESET}"
+    return 0
+  fi
+
+  {
+    (( ${#new_ids[@]} > 0 )) && printf '%s\n' "${new_ids[@]}"
+    (( ${#custom_lines[@]} > 0 )) && printf '%s\n' "${custom_lines[@]}"
+  } | save_conf && echo -e "${DIM}saved - press u in the live view to undo this${RESET}"
+}
+
+# runs inside one tmux pane (or, without tmux, is never called - the
+# fallback loop below calls paint() directly instead). Takes one or more
+# section ids - more than one means this pane is showing several sections
+# grouped together (see tmux_live's capacity guard), stacked with a blank
+# line between them. Its own 1s-timeout key read, same q/e handling as the
+# fallback loop, so any pane can be the one you press q or e in.
+pane_loop() {
+  local -a ids=("$@")
+  trap '_ui_cursor_show' EXIT INT TERM
+  _ui_cursor_hide
+  local key text id
+  while true; do
+    text=""
+    for id in "${ids[@]}"; do
+      text+="$(render_section "$id")"$'\n'
+    done
+    printf '\033[H%s\033[J' "${text//$'\n'/$'\033[K\n'}"
+    IFS= read -rsn1 -t 1 key || key=""
+    case "$key" in
+      q|Q)
+        tmux kill-session -t srv-live 2>/dev/null
+        break
+        ;;
+      e|E)
+        _ui_cursor_show
+        printf '\033[H\033[J'
+        edit_config
+        # the section list may have changed - the only clean way to
+        # reshape a tmux layout is to rebuild it, so drop a flag and let
+        # the outer tmux_live() (still waiting on `tmux attach`) relaunch.
+        touch "$STATE_DIR/.live_restart"
+        tmux kill-session -t srv-live 2>/dev/null
+        break
+        ;;
+      u|U)
+        # panic button: back to the config before the last edit, then
+        # rebuild the layout the same way 'e' does.
+        undo_conf >/dev/null 2>&1
+        touch "$STATE_DIR/.live_restart"
+        tmux kill-session -t srv-live 2>/dev/null
+        break
+        ;;
+    esac
+  done
+}
+
+tmux_live() {
+  local session="srv-live"
+  tmux kill-session -t "$session" 2>/dev/null || true
+
+  local -a ids=()
+  local line
+  while IFS= read -r line; do [[ -n "$line" ]] && ids+=("$line"); done < "$LIVE_CONF"
+  if [[ ${#ids[@]} -eq 0 ]]; then
+    echo "no sections enabled - run: srv live edit" >&2
+    return 1
+  fi
+
+  # how many panes actually fit: each needs a title line (pane-border-status
+  # top) plus at least 2 lines of content, so 3 total. `split-window -v`
+  # splits whatever pane is CURRENTLY ACTIVE, which is always the one just
+  # created - so heights used to go 1/2, 1/4, 1/8, 1/16 and the 5th split
+  # failed silently with nothing telling you why, capping this at 4 panes no
+  # matter how many sections were enabled. Re-equalising after every split
+  # (below) fixes that; this guard is the other half - past what actually
+  # fits, sections group into the last pane instead of a split failing.
+  local term_rows
+  term_rows="$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')"
+  term_rows="${term_rows:-24}"
+  local max_panes=$(( term_rows / 3 ))
+  (( max_panes < 1 )) && max_panes=1
+
+  # Groups are joined with \x1f (ASCII unit separator), not a plain space -
+  # a custom line's id is "custom:<label>:<command>" and the command
+  # itself almost always contains spaces ("ollama list", "docker ps"), so
+  # splitting groups apart on space later would tear a single id in two.
+  # \x1f can't appear in anything typed at a `read -r -p` prompt, so it's
+  # safe as a delimiter that never collides with real id content.
+  local -a pane_groups=()
+  if (( ${#ids[@]} <= max_panes )); then
+    pane_groups=("${ids[@]}")
+  else
+    local i
+    for ((i = 0; i < max_panes - 1; i++)); do pane_groups+=("${ids[$i]}"); done
+    local overflow; overflow="$(printf '%s\x1f' "${ids[@]:$((max_panes - 1))}")"
+    overflow="${overflow%$'\x1f'}"
+    pane_groups+=("$overflow")
+    local overflow_display="${ids[*]:$((max_panes - 1))}"
+    echo "srv live: ${#ids[@]} sections but only $max_panes panes fit at ${term_rows} rows -" \
+         "grouped into the last pane: ${overflow_display// /, }" >&2
+  fi
+
+  local self grp id id_args label pane_id first=1
+  self="$(printf '%q' "$SELF")"
+  for grp in "${pane_groups[@]}"; do
+    local -a group_ids=()
+    if [[ "$grp" == *$'\x1f'* ]]; then
+      IFS=$'\x1f' read -ra group_ids <<<"$grp"
+    else
+      group_ids=("$grp")
+    fi
+    id_args=""
+    for id in "${group_ids[@]}"; do
+      [[ -z "$id" ]] && continue
+      id_args+="$(printf '%q ' "$id")"
+    done
+    if (( ${#group_ids[@]} > 1 )); then
+      label="combined (${#group_ids[@]})"
+    elif [[ "$grp" == custom:* ]]; then
+      label="${grp#custom:}"; label="${label%%:*}"
+    else
+      label="$(catalog_label_for "$grp")"
+    fi
+    if (( first )); then
+      pane_id="$(tmux new-session -d -s "$session" -P -F '#{pane_id}' "bash $self live __pane $id_args")"
+      first=0
+    else
+      pane_id="$(tmux split-window -v -t "$session" -P -F '#{pane_id}' "bash $self live __pane $id_args")"
+    fi
+    tmux select-pane -t "$pane_id" -T "$label" 2>/dev/null
+    # re-equalise after EVERY split, not once at the end - otherwise the
+    # next split still divides an already-shrunk pane instead of a fair
+    # share of the window.
+    tmux select-layout -t "$session" even-vertical
+  done
+  tmux set-option -t "$session" pane-border-status top 2>/dev/null
+  tmux set-option -t "$session" status off 2>/dev/null
+  tmux attach-session -t "$session"
+
+  if [[ -f "$STATE_DIR/.live_restart" ]]; then
+    rm -f "$STATE_DIR/.live_restart"
+    tmux_live
+  fi
+}
+
+# no tmux - single-process loop, same paint() as each tmux pane uses.
+live_loop() {
+  trap '_ui_cursor_show; printf "\n" >&2' EXIT INT TERM
+  _ui_cursor_hide
+  local key=""
+  while true; do
+    paint
+    IFS= read -rsn1 -t 1 key || key=""
+    case "$key" in
+      q|Q) break ;;
+      e|E)
+        _ui_cursor_show
+        printf '\033[H\033[J'
+        edit_config
+        _ui_cursor_hide
+        ;;
+      u|U) undo_conf >/dev/null 2>&1 ;;
+    esac
+  done
+}
+
+cmd_live() {
+  case "${1:-}" in
+    __pane) shift; ensure_conf; pane_loop "$@"; return 0 ;;   # internal: one tmux pane
+    edit)   edit_config; return $? ;;
+    undo)   ensure_conf; undo_conf; return $? ;;
+    reset)  ensure_conf; reset_conf; return $? ;;
+    "")     ;;
+    *)      echo "srv live [edit|undo|reset]" >&2; return 1 ;;
+  esac
+  ensure_conf
+  if ! _ui_is_tty; then render_frame; return 0; fi
+  if command -v tmux &>/dev/null; then tmux_live; return 0; fi
+  live_loop
+}
+
+# ---------------------------------------------------------------- clean / space
+space_report() {
+  h "DISK USAGE"
+  df -h -x tmpfs -x devtmpfs -x squashfs 2>/dev/null
+
+  h "TOP DIRS UNDER $HOME"
+  du -sh "$HOME"/*/ 2>/dev/null | sort -hr | head -15
+
+  h "TOP DIRS UNDER MOUNTED DRIVES"
+  local d
+  for d in "${WATCH_DISKS[@]}"; do
+    [[ "$d" == "/" ]] && continue
+    [[ -d "$d" ]] || continue
+    echo -e "${DIM}$d:${RESET}"
+    du -sh "$d"/*/ 2>/dev/null | sort -hr | head -6
+  done
+
+  h "DOCKER"
+  docker system df 2>/dev/null || echo "docker not installed"
+
+  echo -e "\n${DIM}srv clean   for safe-to-delete candidates${RESET}"
+}
+
+prune_docker_images() {
+  h "DOCKER IMAGE CACHE"
+  docker system df 2>/dev/null | awk 'NR==1 || /^Images/'
+  echo -e "${DIM}removes images not backing any container - Docker volumes are never touched here${RESET}"
+  docker image prune -a -f
+}
+
+prune_logs() {
+  h "OLD SYSTEM LOGS"
+  journalctl --disk-usage 2>/dev/null
+  echo -e "${DIM}keeping the last 14 days${RESET}"
+  sudo journalctl --vacuum-time=14d
+}
+
+prune_interactive() {
+  h "CLEAN UP JUNK"
+  local -a opts=(
+    "Docker image cache (checked live, one click)"
+    "Old system logs (checked live, one click)"
+  )
+
+  local -a picked
+  mapfile -t picked < <(ui_multi "what do you want to clean up?" "" "${opts[@]}")
+
+  if [[ ${#picked[@]} -eq 0 ]]; then
+    echo -e "${DIM}nothing selected${RESET}"
+    return 0
+  fi
+
+  local c
+  for c in "${picked[@]}"; do
+    case "$c" in
+      "Docker image cache"*) prune_docker_images ;;
+      "Old system logs"*)    prune_logs ;;
+    esac
+  done
+}
+
+cmd_space() { space_report; }
+cmd_clean() { prune_interactive; }
+
+# ---------------------------------------------------------------- service submenu
+svcctl_menu() {
+  local label="$1" unit="$2"
+  while true; do
+    local active enabled
+    active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+    echo
+    if [[ "$active" == active ]]; then
+      echo -e "  $label: ${GREEN}active${RESET}"
+    else
+      echo -e "  $label: ${RED}${active:-unknown}${RESET}"
+    fi
+    if [[ "$enabled" == enabled ]]; then
+      echo -e "  boot:  ${GREEN}enabled${RESET}"
+    else
+      echo -e "  boot:  ${YELLOW}${enabled:-disabled}${RESET}"
+    fi
+
+    local choice
+    choice="$(ui_menu "$label service" "" "Start" "Stop" "Restart" "Enable at boot" "Disable at boot" "Back")" || return 0
+    case "$choice" in
+      Start|Stop|Restart)
+        local verb="${choice,,}"
+        if sudo systemctl "$verb" "$unit"; then
+          echo -e "  ${GREEN}✓${RESET} $unit ${verb}ed"
+        else
+          echo -e "  ${RED}failed${RESET} - check: sudo journalctl -u $unit -n 30" >&2
+        fi
+        ;;
+      "Enable at boot")
+        sudo systemctl enable "$unit" && echo -e "  ${GREEN}✓${RESET} enabled"
+        ;;
+      "Disable at boot")
+        sudo systemctl disable "$unit" && echo -e "  ${GREEN}✓${RESET} disabled"
+        ;;
+      Back|"")
+        return 0
+        ;;
+    esac
+  done
+}
+
+# ---------------------------------------------------------------- frp
+# `off` comments a [[proxies]] block out, `on` uncomments it. Every write is
+# validated with python's tomllib before it touches the real file, and the
+# previous file is kept as frpc.toml.prev.
+FRPC_TOML="${FRPC_TOML:-$HOME/frp/frpc.toml}"
+
+_valid_toml() {
+  python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$1" 2>&1
+}
+
+_require_valid_live() {
+  local err
+  err="$(_valid_toml "$FRPC_TOML")" && return 0
+  echo -e "${RED}$FRPC_TOML doesn't parse:${RESET}" >&2
+  echo "$err" | tail -3 >&2
+  return 1
+}
+
+# All block parsing/editing lives in one python program, dispatched by a
+# first argv. Line-based on purpose, not a TOML round-trip: this file mixes
+# active blocks with several different hand-typed comment styles
+# (#[[proxies]], #\t[[proxies]], the broken I#\t[[proxies]]) and a real
+# TOML writer would silently reformat or drop all of that.
+_frp_py() {
+  local cmd="$1"; shift
+  python3 - "$FRPC_TOML" "$cmd" "$@" <<'PY'
+import re, sys
+
+path, cmd = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+lines = open(path).read().splitlines()
+
+FIELDS = ("name", "type", "localIP", "localPort", "remotePort")
+MARK = re.compile(r'^\s*(?:I#|#)*\s*')
+
+def demark(line):
+    """Strip any leading whitespace + comment markers, return (was_marked, bare)."""
+    m = re.match(r'^(\s*)((?:I#|#)\s*)?(.*)$', line)
+    indent, marker, rest = m.groups()
+    return (marker is not None and marker != ""), rest
+
+def find_blocks():
+    blocks = []
+    i = 0
+    while i < len(lines):
+        marked, bare = demark(lines[i])
+        if bare.strip() == "[[proxies]]":
+            start = i
+            fields = {}
+            j = i + 1
+            while j < len(lines):
+                _, fbare = demark(lines[j])
+                mm = re.match(r'^(\w+)\s*=\s*"?([^"\n]*)"?\s*$', fbare)
+                if not mm or mm.group(1) not in FIELDS:
+                    break
+                fields[mm.group(1)] = mm.group(2)
+                j += 1
+            blocks.append({"start": start, "end": j, "enabled": not marked, "fields": fields})
+            i = j
+        else:
+            i += 1
+    return blocks
+
+blocks = find_blocks()
+
+if cmd == "list":
+    for b in blocks:
+        f = b["fields"]
+        state = "on " if b["enabled"] else "off"
+        print(f"{state}\t{f.get('name','?')}\t{f.get('type','?')}\t{f.get('localIP','?')}:{f.get('localPort','?')}\t{f.get('remotePort','?')}")
+
+elif cmd == "toggle":
+    name, want_on = args[0], args[1] == "1"
+    target = next((b for b in blocks if b["fields"].get("name") == name), None)
+    if target is None:
+        print(f"no tunnel named '{name}'", file=sys.stderr); sys.exit(2)
+    if target["enabled"] == want_on:
+        print("nochange"); sys.exit(0)
+    out = list(lines)
+    for i in range(target["start"], target["end"]):
+        _, bare = demark(lines[i])
+        out[i] = ("" if want_on else "# ") + bare if bare.strip() else lines[i]
+    print("\n".join(out[:target["start"]] + out[target["start"]:target["end"]] + out[target["end"]:]))
+
+elif cmd == "rm":
+    name = args[0]
+    target = next((b for b in blocks if b["fields"].get("name") == name), None)
+    if target is None:
+        print(f"no tunnel named '{name}'", file=sys.stderr); sys.exit(2)
+    out = lines[:target["start"]] + lines[target["end"]:]
+    print("\n".join(out))
+
+elif cmd == "add":
+    name, typ, localip, localport, remoteport = args
+    for b in blocks:
+        if b["fields"].get("name") == name:
+            print(f"a tunnel named '{name}' already exists", file=sys.stderr); sys.exit(2)
+        if b["enabled"] and b["fields"].get("remotePort") == remoteport:
+            print(f"remotePort {remoteport} is already used by '{b['fields'].get('name')}'", file=sys.stderr); sys.exit(2)
+    block = (
+        f'\n# -------------------------\n# {name}\n# -------------------------\n'
+        f'[[proxies]]\nname = "{name}"\ntype = "{typ}"\nlocalIP = "{localip}"\n'
+        f'localPort = {localport}\nremotePort = {remoteport}\n'
+    )
+    print("\n".join(lines) + block, end="")
+
+elif cmd == "get":
+    name = args[0]
+    target = next((b for b in blocks if b["fields"].get("name") == name), None)
+    if target is None:
+        sys.exit(2)
+    f = target["fields"]
+    print(f"{'on' if target['enabled'] else 'off'}\t{f.get('type')}\t{f.get('localIP')}:{f.get('localPort')}\t{f.get('remotePort')}")
+
+else:
+    print(f"unknown internal command {cmd}", file=sys.stderr); sys.exit(1)
+PY
+}
+
+list_tunnels() {
+  h "FRP TUNNELS"
+  local active enabled
+  active="$(systemctl is-active frp 2>/dev/null || true)"
+  enabled="$(systemctl is-enabled frp 2>/dev/null || true)"
+  echo -e "  service: $([[ "$active" == active ]] && echo -e "${GREEN}active${RESET}" || echo -e "${RED}${active:-unknown}${RESET}")  boot: $([[ "$enabled" == enabled ]] && echo -e "${GREEN}enabled${RESET}" || echo -e "${YELLOW}${enabled:-disabled}${RESET}")"
+  echo
+  _frp_py list | awk -F'\t' '{printf "  %-3s %-16s %-4s %-24s -> %s\n", $1, $2, $3, $4, $5}'
+}
+
+# writes a new version of the file (piped in on stdin), validates it,
+# shows a diff, then installs it - shared by add/rm/toggle so there's
+# exactly one place that touches the real file. No y/n gate - running
+# `srv frp add/rm/on/off` (or picking it in the menu) is already the
+# decision; the diff above is shown so you can see exactly what changed.
+_frp_apply() {
+  local new_content="$1" verb="$2"
+  local tmp; tmp="$(mktemp)"
+  printf '%s\n' "$new_content" > "$tmp"
+
+  local err
+  err="$(_valid_toml "$tmp")"
+  if [[ -n "$err" ]]; then
+    echo -e "${RED}that change would break the file - not writing it${RESET}" >&2
+    echo "$err" | tail -3 >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  echo -e "  ${GREEN}✓${RESET} still valid TOML"
+
+  h "diff"
+  diff -u "$FRPC_TOML" "$tmp" | tail -n +3 || true
+  echo -e "  ${DIM}$verb, restarting frp (drops all tunnels for a second, ssh included)${RESET}"
+
+  cp "$FRPC_TOML" "${FRPC_TOML}.prev"
+  cp "$tmp" "$FRPC_TOML"
+  rm -f "$tmp"
+  echo -e "  ${GREEN}✓${RESET} previous file kept at ${FRPC_TOML}.prev"
+  if sudo systemctl restart frp; then
+    echo -e "  ${GREEN}✓${RESET} frp restarted"
+  else
+    echo -e "  ${RED}restart failed${RESET} - check: sudo journalctl -u frp -n 30" >&2
+    return 1
+  fi
+}
+
+add_tunnel() {
+  local name="${1:-}" typ="${2:-}" localaddr="${3:-}" remoteport="${4:-}"
+  if [[ -z "$name" || -z "$typ" || -z "$localaddr" || -z "$remoteport" ]]; then
+    cat >&2 <<'EOF'
+srv frp add <name> <tcp|udp> <local-ip:port> <remote-port>
+  example:  srv frp add minecraft tcp 192.168.1.50:25565 25566
+EOF
+    return 1
+  fi
+  [[ "$typ" == tcp || "$typ" == udp ]] || { echo "type must be tcp or udp" >&2; return 1; }
+  [[ "$localaddr" == *:* ]] || { echo "local-ip:port must contain a ':'" >&2; return 1; }
+  local localip="${localaddr%:*}" localport="${localaddr##*:}"
+
+  if ! ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${localport}\$"; then
+    echo -e "  ${YELLOW}note:${RESET} nothing on this box looks like it's listening on port $localport right now"
+  fi
+
+  local new; new="$(_frp_py add "$name" "$typ" "$localip" "$localport" "$remoteport")" || return 1
+  _frp_apply "$new" "add '$name'"
+}
+
+rm_tunnel() {
+  local name="${1:-}"
+  [[ -z "$name" ]] && { echo "usage: srv frp rm <name>" >&2; return 1; }
+  local new; new="$(_frp_py rm "$name")" || return 1
+  _frp_apply "$new" "remove '$name'"
+}
+
+toggle_tunnel() {
+  local name="${1:-}" want="$2"
+  [[ -z "$name" ]] && { echo "usage: srv frp ${want} <name>" >&2; return 1; }
+  local on=0; [[ "$want" == on ]] && on=1
+  local new
+  new="$(_frp_py toggle "$name" "$on")" || return 1
+  if [[ "$new" == "nochange" ]]; then
+    echo "'$name' is already ${want}"
+    return 0
+  fi
+  _frp_apply "$new" "turn ${want} '$name'"
+}
+
+interactive_toggle() {
+  local -a opts=()
+  mapfile -t opts < <(_frp_py list | awk -F'\t' '{state=($1=="on ")?"on":"off"; printf "%s (%s)\n", $2, state}')
+  if (( ${#opts[@]} == 0 )); then echo "no tunnels defined"; return; fi
+  local pick; pick="$(ui_menu "toggle which tunnel?" "" "${opts[@]}")" || return
+  local name="${pick%% (*}"
+  local want=on; [[ "$pick" == *"(on)"* ]] && want=off
+  toggle_tunnel "$name" "$want"
+}
+
+interactive_add() {
+  local name typ localaddr remoteport
+  read -r -p "name (e.g. minecraft): " name
+  [[ -z "$name" ]] && { echo "cancelled"; return; }
+  typ="$(ui_menu "type?" "" tcp udp)" || { echo "cancelled"; return; }
+  read -r -p "local ip:port (e.g. 192.168.1.50:25565): " localaddr
+  read -r -p "remote port on the VPS (e.g. 25566): " remoteport
+  add_tunnel "$name" "$typ" "$localaddr" "$remoteport"
+}
+
+interactive_rm() {
+  local -a names=()
+  mapfile -t names < <(_frp_py list | awk -F'\t' '{print $2}')
+  if (( ${#names[@]} == 0 )); then echo "no tunnels defined"; return; fi
+  local pick; pick="$(ui_menu "remove which tunnel?" "" "${names[@]}")" || return
+  rm_tunnel "$pick"
+}
+
+cmd_frp() {
+  case "${1:-}" in
+    add) shift; _require_valid_live || return 1; add_tunnel "$@" ;;
+    rm)  shift; _require_valid_live || return 1; rm_tunnel "$@" ;;
+    on)  shift; _require_valid_live || return 1; toggle_tunnel "${1:-}" on ;;
+    off) shift; _require_valid_live || return 1; toggle_tunnel "${1:-}" off ;;
+    "")
+      _require_valid_live || return 1
+      list_tunnels
+      # non-TTY (piped/scripted) stays list-only
+      if _ui_is_tty; then
+        local choice
+        while true; do
+          choice="$(ui_menu "frp - what do you want to do?" "" \
+            "Toggle a tunnel on/off" \
+            "Add a tunnel" \
+            "Remove a tunnel" \
+            "Service (start/stop/restart/enable at boot/disable)")" || break
+          case "$choice" in
+            "Toggle a tunnel"*) interactive_toggle ;;
+            "Add a tunnel"*)    interactive_add ;;
+            "Remove a tunnel"*) interactive_rm ;;
+            "Service"*)         svcctl_menu "frp" frp ;;
+          esac
+          echo
+          if ! _require_valid_live; then
+            echo "the file no longer parses - fix it, then re-run srv frp" >&2
+            break
+          fi
+          list_tunnels
+        done
+      fi
+      ;;
+    *) echo "srv frp [add|rm|on|off]" >&2; return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------- xray
+# Shows/replaces the outbound in the xray config. Only outbounds (and, with
+# automatic failover, observatory/balancer) are touched - inbounds stay as
+# they are. Every outbound built here gets mux (concurrency 8). Saved servers
+# live in $STATE_DIR/xray-servers.json (machine-local: proxy credentials).
+XRAY_BIN="${XRAY_BIN:-/usr/local/bin/xray}"
+XRAY_CONF="${XRAY_CONF:-/usr/local/etc/xray/config.json}"
+SERVERS_FILE="${SERVERS_FILE:-$STATE_DIR/xray-servers.json}"
+
+# _xray_py SCRIPT [ARGS...] - runs a small python3 program against the
+# config, keeps all JSON parsing/writing in one language instead of sed.
+_xray_py() {
+  python3 - "$@"
+}
+
+xray_status() {
+  h "XRAY"
+  if [[ ! -f "$XRAY_CONF" ]]; then
+    echo "no config at $XRAY_CONF"
+    return 1
+  fi
+  local active enabled
+  active="$(systemctl is-active xray 2>/dev/null || true)"
+  enabled="$(systemctl is-enabled xray 2>/dev/null || true)"
+  if [[ "$active" == active ]]; then echo -e "  service: ${GREEN}active${RESET}"; else echo -e "  service: ${RED}${active:-unknown}${RESET}"; fi
+  if [[ "$enabled" == enabled ]]; then
+    echo -e "  boot:    ${GREEN}enabled${RESET}"
+  else
+    echo -e "  boot:    ${YELLOW}${enabled:-disabled}${RESET} - won't come back after a reboot (sudo systemctl enable xray)"
+  fi
+  _xray_py "$XRAY_CONF" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+obs = cfg.get("outbounds") or [{}]
+def mux_str(ob):
+    m = ob.get("mux") or {}
+    if not m.get("enabled"):
+        return "off"
+    return f"on (concurrency {m.get('concurrency','?')})"
+
+if len(obs) > 1:
+    print(f"  outbounds: {len(obs)} (automatic failover on)")
+    for ob in obs:
+        vnext = ((ob.get("settings") or {}).get("vnext") or [{}])[0]
+        print(f"    {ob.get('tag','?'):<10} {ob.get('protocol','?')} -> {vnext.get('address','?')}:{vnext.get('port','?')}  mux: {mux_str(ob)}")
+else:
+    ob = obs[0]
+    vnext = ((ob.get("settings") or {}).get("vnext") or [{}])[0]
+    rs = ((ob.get("streamSettings") or {}).get("realitySettings") or {})
+    print(f"  outbound: {ob.get('protocol','?')} -> {vnext.get('address','?')}:{vnext.get('port','?')}")
+    if rs:
+        print(f"  reality:  sni={rs.get('serverName','?')} fp={rs.get('fingerprint','?')}")
+    print(f"  mux:      {mux_str(ob)}")
+for ib in cfg.get("inbounds", []):
+    print(f"  inbound:  {ib.get('protocol','?')} on {ib.get('listen','?')}:{ib.get('port','?')}")
+PY
+}
+
+# parses a vless:// URI into a JSON outbound block on stdout - never touches
+# the live config, just prints. Kept separate from write_config so import()
+# can diff before asking to write anything.
+parse_vless() {
+  local link="$1"
+  _xray_py "$link" <<'PY'
+import json, sys
+from urllib.parse import urlparse, parse_qs, unquote
+
+link = sys.argv[1]
+if not link.startswith("vless://"):
+    print("not a vless:// link", file=sys.stderr); sys.exit(1)
+
+u = urlparse(link)
+uuid = u.username
+host = u.hostname
+port = u.port
+if not (uuid and host and port):
+    print("couldn't parse uuid/host/port out of that link", file=sys.stderr); sys.exit(1)
+q = {k: v[0] for k, v in parse_qs(u.query).items()}
+
+outbound = {
+    "protocol": "vless",
+    "settings": {
+        "vnext": [{
+            "address": host,
+            "port": port,
+            "users": [{"id": uuid, "encryption": q.get("encryption", "none")}],
+        }]
+    },
+    "streamSettings": {
+        "network": q.get("type", "tcp"),
+        "security": q.get("security", "reality"),
+    },
+}
+
+# tags a JSON outbound blob with the given tag (used only for automatic
+# failover, where outbounds[] has more than one entry and xray's routing
+# needs to address each by name).
+_tag_outbound() {
+  python3 -c "import json,sys; ob=json.loads(sys.argv[1]); ob['tag']=sys.argv[2]; print(json.dumps(ob))" "$1" "$2"
+}
+
+_current_vless_hostport() {
+  [[ -f "$XRAY_CONF" ]] || return 1
+  _xray_py "$XRAY_CONF" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+obs = cfg.get("outbounds") or [{}]
+hps = []
+for ob in obs:
+    vnext = ((ob.get("settings") or {}).get("vnext") or [{}])[0]
+    addr, port = vnext.get("address"), vnext.get("port")
+    if addr and port:
+        hps.append(f"{addr}:{port}")
+print(",".join(hps))
+PY
+}
+
+_failover_enabled() {
+  [[ -f "$XRAY_CONF" ]] || return 1
+  _xray_py "$XRAY_CONF" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+sys.exit(0 if "observatory" in cfg else 1)
+PY
+}
+
+_servers_py() {
+  local cmd="$1"; shift
+  python3 - "$SERVERS_FILE" "$cmd" "$@" <<'PY'
+import json, sys, os, datetime
+from urllib.parse import urlparse, unquote
+
+path, cmd = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+
+def load():
+    if not os.path.exists(path):
+        return []
+    try:
+        return json.load(open(path))
+    except Exception:
+        return []
+
+def save(servers):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    json.dump(servers, open(path, "w"), indent=2)
+
+def link_uuid(link):
+    if not link.startswith("vless://"):
+        return None
+    return urlparse(link).username
+
+def link_hostport(link):
+    # identity of a NODE, not of your account - a subscription commonly
+    # reuses the same client UUID across every node it lists, so UUID
+    # alone can't tell two different servers apart. host:port can.
+    if not link.startswith("vless://"):
+        return None
+    u = urlparse(link)
+    if not (u.hostname and u.port):
+        return None
+    return f"{u.hostname}:{u.port}"
+
+def link_label(link):
+    u = urlparse(link)
+    if u.fragment:
+        return unquote(u.fragment)
+    return f"{u.hostname}:{u.port}"
+
+servers = load()
+
+if cmd == "list":
+    cur = set((args[0] if args else "").split(",")) if args and args[0] else set()
+    for s in servers:
+        mark = "*" if link_hostport(s["link"]) in cur else " "
+        print(f"{mark}\t{s['label']}\t{s.get('added','?')}\t{s['link']}")
+
+elif cmd == "add":
+    link = args[0]
+    hp = link_hostport(link)
+    if hp is None:
+        print("not a vless:// link", file=sys.stderr); sys.exit(1)
+    for s in servers:
+        if link_hostport(s["link"]) == hp:
+            print(f"already saved as '{s['label']}'"); sys.exit(0)
+    label = link_label(link)
+    base, n, existing = label, 2, {s["label"] for s in servers}
+    while label in existing:
+        label = f"{base} ({n})"; n += 1
+    servers.append({"label": label, "link": link, "added": datetime.date.today().isoformat()})
+    save(servers)
+    print(f"added '{label}'")
+
+elif cmd == "rm":
+    label = args[0]
+    before = len(servers)
+    servers = [s for s in servers if s["label"] != label]
+    save(servers)
+    print("removed" if len(servers) < before else "no such server", file=sys.stderr if len(servers) == before else sys.stdout)
+
+elif cmd == "get":
+    label = args[0]
+    for s in servers:
+        if s["label"] == label:
+            print(s["link"]); sys.exit(0)
+    sys.exit(2)
+
+else:
+    print(f"unknown internal command {cmd}", file=sys.stderr); sys.exit(1)
+PY
+}
+
+list_servers() {
+  h "SAVED XRAY SERVERS"
+  local cur; cur="$(_current_vless_hostport 2>/dev/null || true)"
+  local -a rows=()
+  mapfile -t rows < <(_servers_py list "$cur")
+  if (( ${#rows[@]} == 0 )); then
+    echo "  none saved yet - paste a link or a subscription URL"
+    return
+  fi
+  printf '%s\n' "${rows[@]}" | awk -F'\t' '{printf "  %s %-24s added %s\n", $1, $2, $3}'
+}
+
+# fetches a subscription URL and saves every vless:// link it finds.
+# Deliberately bypasses this box's own xray proxy env vars - you may be
+# fetching a fresh list specifically because the current proxy is the one
+# that's broken, so routing this through it would be circular.
+fetch_subscription() {
+  local url="${1:-}"
+  [[ -z "$url" ]] && { echo "usage: paste a subscription URL" >&2; return 1; }
+
+  local raw errfile; errfile="$(mktemp)"
+  raw="$(env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY \
+    curl -fsSL --max-time 10 "$url" 2>"$errfile")"
+  local rc=$?
+  if (( rc != 0 )); then
+    echo -e "${RED}couldn't fetch that URL${RESET}" >&2
+    cat "$errfile" >&2
+    rm -f "$errfile"
+    return 1
+  fi
+  rm -f "$errfile"
+
+  # subscriptions are usually base64 of a newline-separated link list;
+  # fall back to treating the response as plain text if that doesn't
+  # decode to anything vless-shaped.
+  local decoded
+  decoded="$(printf '%s' "$raw" | base64 -d 2>/dev/null || true)"
+  if [[ -z "$decoded" ]] || ! grep -q '^vless://' <<<"$decoded"; then
+    decoded="$raw"
+  fi
+
+  local -a links=()
+  mapfile -t links < <(grep -o "vless://[^\" '<>]*" <<<"$decoded" || true)
+  if (( ${#links[@]} == 0 )); then
+    echo -e "${YELLOW}no vless:// links found in that response${RESET}" >&2
+    return 1
+  fi
+
+  h "importing from subscription"
+  local link out added=0
+  for link in "${links[@]}"; do
+    out="$(_servers_py add "$link")"
+    [[ "$out" == added* ]] && ((added++)) || true
+    echo "  $out"
+  done
+  echo -e "  ${GREEN}✓${RESET} $added new server(s) saved (${#links[@]} found)"
+}
+
+# writing the live config: shared by import_link and the enable/disable-
+# failover paths, so there's exactly one place that does the backup-history
+# + restart dance.
+_install_new_config() {
+  local tmp="$1"
+
+  local bak; bak="${XRAY_CONF}.$(date +%Y-%m-%d_%H%M).bak"
+  sudo cp "$XRAY_CONF" "$bak"
+  sudo cp "$tmp" "$XRAY_CONF"
+  rm -f "$tmp"
+  echo -e "  ${GREEN}✓${RESET} previous config kept at $bak"
+
+  # timestamped backup history, not a single overwritten .prev - keeps the
+  # last 5 so you can go back further than just the most recent change.
+  local -a old_baks
+  mapfile -t old_baks < <(ls -1t "${XRAY_CONF}".*.bak 2>/dev/null | tail -n +6)
+  if (( ${#old_baks[@]} > 0 )); then
+    sudo rm -f -- "${old_baks[@]}"
+    echo -e "  ${DIM}trimmed to the newest 5 backups${RESET}"
+  fi
+
+  if sudo systemctl restart xray; then
+    echo -e "  ${GREEN}✓${RESET} xray restarted"
+  else
+    echo -e "  ${RED}restart failed${RESET} - check: sudo journalctl -u xray -n 30" >&2
+    return 1
+  fi
+}
+
+import_link() {
+  local link="${1:-}"
+  [[ -z "$link" ]] && { echo "usage: srv xray import \"vless://...\"" >&2; return 1; }
+  [[ -f "$XRAY_CONF" ]] || { echo "no config at $XRAY_CONF - can't import into nothing" >&2; return 1; }
+
+  local new_outbound
+  new_outbound="$(parse_vless "$link")" || return 1
+
+  local tmp; tmp="$(mktemp --suffix=.json)"
+  _xray_py "$XRAY_CONF" "$new_outbound" <<'PY' > "$tmp"
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+new_ob = json.loads(sys.argv[2])
+cfg["outbounds"] = [new_ob]
+print(json.dumps(cfg, indent=2))
+PY
+
+  h "checking the new config"
+  # xray needs a .json-suffixed path to auto-detect format, and the check is
+  # `run -test -c`, not a top-level -test flag (verified against this box's
+  # actual xray binary - `xray -test -config` silently fails to read at all).
+  if ! "$XRAY_BIN" run -test -c "$tmp" >/tmp/xray-test.$$ 2>&1; then
+    echo -e "${RED}xray rejects this config - not touching anything${RESET}"
+    cat /tmp/xray-test.$$ >&2
+    rm -f "$tmp" /tmp/xray-test.$$
+    return 1
+  fi
+  rm -f /tmp/xray-test.$$
+  echo -e "  ${GREEN}✓${RESET} valid config"
+
+  h "what changes"
+  echo "  old outbound(s):"; xray_status 2>/dev/null | grep '  outbound' | sed 's/^/  /'
+  echo "  new outbound:"
+  _xray_py "$new_outbound" <<'PY'
+import json, sys
+ob = json.loads(sys.argv[1])
+vnext = ob["settings"]["vnext"][0]
+rs = ob.get("streamSettings", {}).get("realitySettings", {})
+print(f"    {ob['protocol']} -> {vnext['address']}:{vnext['port']}")
+if rs:
+    print(f"    reality: sni={rs.get('serverName')} pbk={rs.get('publicKey','')[:8]}... sid={rs.get('shortId','')}")
+mux = ob.get("mux") or {}
+print(f"    mux: {'on (concurrency ' + str(mux.get('concurrency')) + ')' if mux.get('enabled') else 'off'}")
+PY
+
+  echo -e "  ${DIM}writing and restarting xray (inbounds untouched - frp keeps working)${RESET}"
+  _install_new_config "$tmp"
+}
+
+enable_failover() {
+  local -a rows=()
+  mapfile -t rows < <(_servers_py list)
+  if (( ${#rows[@]} < 2 )); then
+    echo -e "${YELLOW}need at least 2 saved servers for automatic failover - only ${#rows[@]} saved right now${RESET}"
+    return 1
+  fi
+
+  # zero-padded so no tag is a prefix/substring of another (xray's
+  # subjectSelector and routing selector both match by prefix) - without
+  # this, "proxy-1" would also match "proxy-10", "proxy-11", ... once
+  # there are 10+ saved servers.
+  local width=${#rows[@]}; width=${#width}
+  local -a tagged=()
+  local i=1 row label link ob_json tag
+  for row in "${rows[@]}"; do
+    label="$(cut -f2 <<<"$row")"; link="$(cut -f4 <<<"$row")"
+    ob_json="$(parse_vless "$link" 2>/dev/null)" || { echo "  skipping '$label' - couldn't parse" >&2; continue; }
+    tag="$(printf 'proxy-%0*d' "$width" "$i")"
+    tagged+=("$(_tag_outbound "$ob_json" "$tag")")
+    ((i++)) || true
+  done
+  if (( ${#tagged[@]} < 2 )); then
+    echo -e "${RED}fewer than 2 links parsed cleanly - not enabling${RESET}" >&2
+    return 1
+  fi
+
+  local obs_json
+  obs_json="$(printf '%s\n' "${tagged[@]}" | python3 -c "import json,sys; print(json.dumps([json.loads(l) for l in sys.stdin]))")"
+
+  local tmp; tmp="$(mktemp --suffix=.json)"
+  _xray_py "$XRAY_CONF" "$obs_json" <<'PY' > "$tmp"
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+new_obs = json.loads(sys.argv[2])
+tags = [o["tag"] for o in new_obs]
+cfg["outbounds"] = new_obs
+# xray's own compiled struct tags say "subjectSelector", not
+# "subscribeList" - verified against the actual binary on this box
+# (`strings` on the xray-core observatory.Config struct).
+cfg["observatory"] = {"subjectSelector": tags, "probeInterval": "10m"}
+routing = cfg.get("routing", {})
+routing["balancers"] = [b for b in routing.get("balancers", []) if b.get("tag") != "auto-balancer"]
+routing["balancers"].append({"tag": "auto-balancer", "selector": tags, "strategy": {"type": "leastPing"}})
+rules = [r for r in routing.get("rules", []) if r.get("balancerTag") != "auto-balancer"]
+rules.append({"type": "field", "network": "tcp,udp", "balancerTag": "auto-balancer"})
+routing["rules"] = rules
+cfg["routing"] = routing
+print(json.dumps(cfg, indent=2))
+PY
+
+  h "checking the automatic-failover config"
+  if ! "$XRAY_BIN" run -test -c "$tmp" >/tmp/xray-test.$$ 2>&1; then
+    echo -e "${RED}xray rejects this config - not touching anything${RESET}"
+    cat /tmp/xray-test.$$ >&2
+    rm -f "$tmp" /tmp/xray-test.$$
+    return 1
+  fi
+  rm -f /tmp/xray-test.$$
+  echo -e "  ${GREEN}✓${RESET} valid config, ${#tagged[@]} servers, leastPing balancer"
+  echo -e "  ${DIM}writing and restarting xray - switching to automatic failover across ${#tagged[@]} servers${RESET}"
+  _install_new_config "$tmp"
+}
+
+disable_failover() {
+  [[ -f "$XRAY_CONF" ]] || { echo "no config at $XRAY_CONF" >&2; return 1; }
+
+  local tmp; tmp="$(mktemp --suffix=.json)"
+  _xray_py "$XRAY_CONF" <<'PY' > "$tmp"
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+obs = cfg.get("outbounds") or []
+if not obs:
+    print("no outbound to keep", file=sys.stderr); sys.exit(1)
+keep = dict(obs[0])
+keep.pop("tag", None)
+cfg["outbounds"] = [keep]
+cfg.pop("observatory", None)
+routing = cfg.get("routing")
+if routing:
+    routing["balancers"] = [b for b in routing.get("balancers", []) if b.get("tag") != "auto-balancer"]
+    routing["rules"] = [r for r in routing.get("rules", []) if r.get("balancerTag") != "auto-balancer"]
+    if routing["balancers"] or routing["rules"]:
+        cfg["routing"] = routing
+    else:
+        cfg.pop("routing", None)
+print(json.dumps(cfg, indent=2))
+PY
+
+  h "checking the single-outbound config"
+  if ! "$XRAY_BIN" run -test -c "$tmp" >/tmp/xray-test.$$ 2>&1; then
+    echo -e "${RED}xray rejects this config - not touching anything${RESET}"
+    cat /tmp/xray-test.$$ >&2
+    rm -f "$tmp" /tmp/xray-test.$$
+    return 1
+  fi
+  rm -f /tmp/xray-test.$$
+  echo -e "  ${GREEN}✓${RESET} valid config"
+  echo -e "  ${DIM}writing and restarting xray - back to a single outbound, no more automatic failover${RESET}"
+  _install_new_config "$tmp"
+}
+
+interactive_add_subscription() {
+  local url
+  read -r -p "subscription URL: " url
+  [[ -z "$url" ]] && { echo "cancelled"; return; }
+  fetch_subscription "$url"
+}
+
+interactive_switch_server() {
+  local -a rows=()
+  mapfile -t rows < <(_servers_py list)
+  if (( ${#rows[@]} == 0 )); then
+    echo "no saved servers yet - paste a link or a subscription first"
+    return
+  fi
+  local -a labels=()
+  mapfile -t labels < <(printf '%s\n' "${rows[@]}" | cut -f2)
+  local pick; pick="$(ui_menu "switch to which server?" "" "${labels[@]}")" || return
+  local link; link="$(_servers_py get "$pick")" || { echo "couldn't find that server" >&2; return 1; }
+  import_link "$link"
+}
+
+cmd_xray() {
+  case "${1:-}" in
+    import) shift; import_link "${1:-}" ;;
+    "")
+      xray_status
+      # non-TTY (piped/scripted) stays status-only
+      if _ui_is_tty; then
+        local choice link fo_label
+        while true; do
+          list_servers
+          fo_label="Automatic failover: off"
+          _failover_enabled && fo_label="Automatic failover: on"
+          choice="$(ui_menu "xray - what do you want to do?" "" \
+            "Paste a vless:// link - keeps the old config, writes a new one" \
+            "Paste a subscription URL - saves every vless:// link it finds" \
+            "Switch server - pick from your saved list" \
+            "$fo_label" \
+            "Service (start/stop/restart/enable at boot/disable)")" || break
+          case "$choice" in
+            "Paste a vless:// link"*)
+              read -r -p "paste the vless:// link: " link
+              if [[ -n "$link" ]]; then
+                _servers_py add "$link" >/dev/null 2>&1 || true
+                import_link "$link"
+              fi
+              ;;
+            "Paste a subscription URL"*) interactive_add_subscription ;;
+            "Switch server"*)            interactive_switch_server ;;
+            "Automatic failover"*)
+              if _failover_enabled; then disable_failover; else enable_failover; fi
+              ;;
+            "Service"*) svcctl_menu "xray" xray ;;
+          esac
+          echo
+          xray_status
+        done
+      fi
+      ;;
+    *) echo 'srv xray [import "vless://..."]' >&2; return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------- menu + main
+usage() {
+  cat <<'EOF'
+srv - small box manager
+
+  srv                     the friendly menu - arrows to pick, type to filter
+  srv live [edit]         live-refreshing view (GPU/ollama/top by default,
+                          e to edit sections, u to undo the last edit, q to
+                          quit) - one tmux pane per section
+  srv live undo|reset     restore the config before the last edit / defaults
+  srv clean               pick junk to delete (docker images, old logs)
+  srv space               disk usage report
+  srv xray [import <vless://...>]   show/replace the outbound proxy
+  srv frp [add|rm|on|off]           manage tunnels in ~/frp/frpc.toml
+EOF
+}
+
+menu() {
+  local MENU_LAST_FILE="$STATE_DIR/menu_last"
+  local -a order=(
+    "Live watch - GPU / ollama / top, updates every second"
+    "Clean up junk - tick what to delete, runs as soon as you confirm the tick"
+    "Xray - link, subscription, switch servers, start/stop/enable"
+    "Frp - toggle/add/remove tunnels, start/stop/enable the service"
+  )
+  mkdir -p "$STATE_DIR"
+  local default="" choice
+  [[ -f "$MENU_LAST_FILE" ]] && default="$(cat "$MENU_LAST_FILE" 2>/dev/null)"
+
+  while true; do
+    ui_clear
+    choice="$(ui_menu "srv - what do you want to do?" "$default" "${order[@]}")" || { ui_clear; return 0; }
+    default="$choice"
+    echo "$choice" > "$MENU_LAST_FILE" 2>/dev/null
+    ui_clear
+    # subshells: a section's traps/exits can't take the menu down with it
+    case "$choice" in
+      "Live watch"*)    ( load_disks; cmd_live ) ;;
+      "Clean up junk"*) ( cmd_clean ) ;;
+      "Xray"*)          ( cmd_xray ) ;;
+      "Frp"*)           ( cmd_frp ) ;;
+    esac
+    echo
+    read -rsn1 -p "press any key to go back to the menu... "
+    echo
+  done
+}
+
+main() {
+  local cmd="${1:-menu}"
+  [[ $# -gt 0 ]] && shift
+  case "$cmd" in
+    menu)
+      # no TTY: a menu can't work; print the live snapshot instead
+      if ! _ui_is_tty; then load_disks; cmd_live; return; fi
+      menu ;;
+    live)   load_disks; cmd_live "$@" ;;
+    clean)  cmd_clean ;;
+    space)  load_disks; cmd_space ;;
+    xray)   cmd_xray "$@" ;;
+    frp)    cmd_frp "$@" ;;
+    -h|--help|help) usage ;;
+    *) echo "srv: unknown command '$cmd'" >&2; usage >&2; return 1 ;;
+  esac
+}
+
+main "$@"
