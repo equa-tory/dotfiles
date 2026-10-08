@@ -158,7 +158,14 @@ claude-xray() {
     claude "$@"
 }
 
-
+cx() {
+    HTTPS_PROXY="http://127.0.0.1:1081" \
+    HTTP_PROXY="http://127.0.0.1:1081" \
+    https_proxy="http://127.0.0.1:1081" \
+    http_proxy="http://127.0.0.1:1081" \
+    NO_PROXY="" \
+    claude "$@"
+}
 # ==============================
 # ALIASES - GENERAL
 # ==============================
@@ -205,7 +212,12 @@ alias scl='screen -list'
 alias ff='clear; neofetch'
 alias smi='nvidia-smi'
 alias g='rg'
-alias f='fd'
+#alias f='fdfind'
+if command -v fd >/dev/null 2>&1; then
+    alias f='fd'
+elif command -v fdfind >/dev/null 2>&1; then
+    alias f='fdfind'
+fi
 alias nv='~/log.sh'
 alias log='~/log.sh'
 
