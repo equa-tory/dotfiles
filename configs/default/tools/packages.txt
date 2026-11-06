@@ -1,0 +1,8 @@
+openssh
+tmux
+vim
+curl
+wget
+tar
+unzip
+zip

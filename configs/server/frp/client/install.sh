@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# description: Install FRP client service and generate a local auth token
+# default: false
+set -euo pipefail
+
+source_dir='/@/frp/frp'
+if [[ ! -x "$source_dir/frpc" || ! -f "$source_dir/frpc.toml" ]]; then
+  echo "FRP client files not found in $source_dir" >&2
+  exit 1
+fi
+sudo -v
+sudo install -d -m 755 /opt/frp /etc/frp
+sudo install -m 755 "$source_dir/frpc" /opt/frp/frpc
+sudo install -m 600 "$source_dir/frpc.toml" /etc/frp/frpc.toml
+token="$(openssl rand -hex 32)"
+sudo sed -i "s/^auth.token *=.*/auth.token = \"$token\"/" /etc/frp/frpc.toml
+sudo tee /etc/systemd/system/frpc.service >/dev/null <<'UNIT'
+[Unit]
+Description=FRP Client Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/frp/frpc -c /etc/frp/frpc.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo chmod 600 /etc/frp/frpc.toml
+sudo systemctl daemon-reload
+sudo systemctl enable --now frpc.service
+printf 'Client token (copy securely to server): %s\n' "$token"
