@@ -36,11 +36,11 @@ Modules run as the invoking user. Use `sudo` only for the specific operations th
 
 ## Scope and limitations
 
-- Implemented: shell aliases/TERM fallback, package list, GitHub SSH keys, Torii desktop, FRP, Alloy placeholder, Grafana/Loki, and server security packages.
+- Implemented: shell aliases/TERM fallback, package list, GitHub SSH keys, local tmux/Neovim configs, desktop tools and mirrors, explicit Torii launcher, FRP, Alloy placeholder, Grafana/Loki, and server security settings.
 - System administration installers **must** validate environment/ports before changing configs and must refuse to lock out the current SSH connection.
 - `--dry-run` lists selected scripts; it cannot predict each installer’s side effects yet.
 - Current `--profile` replaces the default selection (it does not automatically include common modules); use interactive menu for combinations.
-- Default module selection runs SSH-key import for the invoking user, not for the future `equa` account.
+- The optional default user module creates an administrator account after prompting for its username and password.
 - Most macOS tools need Homebrew installed separately.
 - Avoid exposing Loki (auth disabled) or Grafana directly on an unrestricted public address.
 

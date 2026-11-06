@@ -12,6 +12,23 @@ backup_file() {
   fi
 }
 
+# Replace a config target with a symlink to a repo-managed file. Preserve any
+# existing file, directory, or symlink before replacing it.
+install_config_link() {
+  local source="$1" target="$2"
+  mkdir -p "$(dirname "$target")"
+  if [[ -L "$target" && "$(readlink -f "$target" 2>/dev/null || true)" == "$(readlink -f "$source")" ]]; then
+    return
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    local backup="$target.bak.$(date +%Y%m%d-%H%M%S)-$$"
+    cp -a -- "$target" "$backup"
+    echo "Backup: $backup"
+    rm -rf -- "$target"
+  fi
+  ln -s -- "$source" "$target"
+}
+
 # Append a managed source command only if absent; backs up the original before edit.
 ensure_source_line() {
   local path="$1" line="$2" placement="${3:-bottom}"

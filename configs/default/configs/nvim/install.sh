@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# description: Install Neovim config from Torii dotfiles
+# description: Install the repository Neovim configuration
 # default: false
 set -euo pipefail
-
-folder="$HOME/.local/share/torii-dotfiles"
-if [[ ! -d "$folder/.git" ]]; then
-  git clone https://github.com/equa-tory/torii-dotfiles.git "$folder"
-fi
-"$folder/install.sh" --only nvim
+source "$BOOTSTRAP_ROOT/lib/common.sh"
+install_config_link "$BOOTSTRAP_ROOT/configs/default/.config/nvim/init.lua" "$HOME/.config/nvim/init.lua"
+echo 'Neovim config linked'

@@ -3,11 +3,7 @@
 # default: true
 set -euo pipefail
 source "$BOOTSTRAP_ROOT/lib/common.sh"
-mkdir -p "$HOME/.config/shell"
-if ! cmp -s "$BOOTSTRAP_ROOT/configs/default/shell/aliases.sh" "$HOME/.config/shell/aliases.sh"; then
-  backup_file "$HOME/.config/shell/aliases.sh"
-  cp "$BOOTSTRAP_ROOT/configs/default/shell/aliases.sh" "$HOME/.config/shell/aliases.sh"
-fi
-ensure_source_line "$HOME/.bashrc" '[[ -r "$HOME/.config/shell/aliases.sh" ]] && source "$HOME/.config/shell/aliases.sh"'
-ensure_source_line "$HOME/.zshrc" '[[ -r "$HOME/.config/shell/aliases.sh" ]] && source "$HOME/.config/shell/aliases.sh"'
-echo "Universal aliases installed"
+install_config_link "$BOOTSTRAP_ROOT/configs/default/shell/shellrc" "$HOME/.config/shell/shellrc"
+ensure_source_line "$HOME/.bashrc" '[[ -r "$HOME/.config/shell/shellrc" ]] && source "$HOME/.config/shell/shellrc"'
+ensure_source_line "$HOME/.zshrc" '[[ -r "$HOME/.config/shell/shellrc" ]] && source "$HOME/.config/shell/shellrc"'
+echo "Universal shell config installed"
