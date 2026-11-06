@@ -12,7 +12,9 @@ sudo -v
 sudo install -d -m 755 /opt/frp /etc/frp
 sudo install -m 755 "$source_dir/frpc" /opt/frp/frpc
 sudo install -m 600 "$source_dir/frpc.toml" /etc/frp/frpc.toml
-token="$(openssl rand -hex 32)"
+read -r -s -p 'FRP auth token (blank generates one): ' token
+printf '\n'
+if [[ -z "$token" ]]; then token="$(openssl rand -hex 32)"; fi
 sudo sed -i "s/^auth.token *=.*/auth.token = \"$token\"/" /etc/frp/frpc.toml
 sudo tee /etc/systemd/system/frpc.service >/dev/null <<'UNIT'
 [Unit]
@@ -32,4 +34,5 @@ UNIT
 sudo chmod 600 /etc/frp/frpc.toml
 sudo systemctl daemon-reload
 sudo systemctl enable --now frpc.service
-printf 'Client token (copy securely to server): %s\n' "$token"
+printf 'Client token (synchronize securely with server config): %s\n' "$token"
+unset token
