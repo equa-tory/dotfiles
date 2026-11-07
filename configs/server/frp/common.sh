@@ -21,23 +21,14 @@ frp_linux_arch() {
 }
 
 frp_install_binary() {
-  local binary="$1" arch release_info version url digest tmpdir archive extracted asset_name vendored
+  local binary="$1" arch release_info version url digest tmpdir archive extracted
   command -v curl >/dev/null || { echo 'curl is required to download FRP' >&2; return 1; }
   command -v tar >/dev/null || { echo 'tar is required to unpack FRP' >&2; return 1; }
   command -v sha256sum >/dev/null || { echo 'sha256sum is required to verify FRP' >&2; return 1; }
   arch="$(frp_linux_arch)"
-  version='0.72.0'
-  asset_name="frp_${version}_linux_${arch}.tar.gz"
-  vendored="$BOOTSTRAP_ROOT/configs/server/frp/assets/$asset_name"
-  url=''
-  if [[ -f "$vendored" ]]; then
-    digest="$(awk -v asset="$asset_name" '$2 == asset { print $1 }' \
-      "$BOOTSTRAP_ROOT/configs/server/frp/assets/SHA256SUMS")"
-    [[ -n "$digest" ]] || { echo "Missing checksum for vendored $asset_name" >&2; return 1; }
-  else
-    release_info="$(curl --fail --silent --show-error --location \
-      https://api.github.com/repos/fatedier/frp/releases/latest)"
-    read -r version url digest < <(python3 -c '
+  release_info="$(curl --fail --silent --show-error --location \
+    https://api.github.com/repos/fatedier/frp/releases/latest)"
+  read -r version url digest < <(python3 -c '
 import json, sys
 release = json.load(sys.stdin)
 version = release["tag_name"].removeprefix("v")
@@ -50,15 +41,10 @@ if not digest:
     raise SystemExit(f"GitHub release did not provide a SHA-256 digest for {asset_name}")
 print(version, asset["browser_download_url"], digest)
 ' "$arch" <<< "$release_info")
-  fi
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' RETURN
   archive="$tmpdir/frp.tar.gz"
-  if [[ -f "$vendored" ]]; then
-    cp "$vendored" "$archive"
-  else
-    curl --fail --silent --show-error --location "$url" -o "$archive"
-  fi
+  curl --fail --silent --show-error --location "$url" -o "$archive"
   printf '%s  %s\n' "$digest" "$archive" | sha256sum --check --status || {
     echo 'FRP release checksum verification failed' >&2
     return 1
