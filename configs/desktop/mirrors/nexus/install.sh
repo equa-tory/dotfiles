@@ -4,7 +4,9 @@
 set -euo pipefail
 host="${MIRROR_HOST:-192.168.1.50}"
 nexus="http://$host:8090/repository"
-curl --fail --silent --show-error --max-time 4 "$nexus/" -o /dev/null || { echo "Nexus $host is unreachable; unchanged"; exit 0; }
+# These are LAN endpoints. Bypass an active internet proxy when probing them;
+# Nexus returns HTTP 400 for /repository/ itself, so check the UI root instead.
+curl --noproxy '*' --fail --silent --show-error --max-time 4 "http://$host:8090/" -o /dev/null || { echo "Nexus $host is unreachable; unchanged"; exit 0; }
 backup() { [[ -e "$1" ]] && ! grep -q 'bootstrap-mirror' "$1" && cp -a "$1" "$1.bootstrap-bak" || true; }
 backup "$HOME/.npmrc"
 cat > "$HOME/.npmrc" <<EOF
