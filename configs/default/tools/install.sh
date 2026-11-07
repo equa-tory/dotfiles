@@ -54,8 +54,8 @@ for path in paths:
         path.write_text(updated)
         print(f'Disabled stale CD-ROM APT source in {path}')
 PY
-  sudo apt-get update
-  sudo apt-get install -y "${packages[@]/openssh/openssh-client}"
+  sudo apt-get -o DPkg::Lock::Timeout=600 update
+  sudo apt-get -o DPkg::Lock::Timeout=600 install -y "${packages[@]/openssh/openssh-client}"
 elif command -v pacman >/dev/null 2>&1; then
   sudo pacman -S --needed --noconfirm "${packages[@]}"
 elif command -v brew >/dev/null 2>&1; then

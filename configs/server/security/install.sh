@@ -6,8 +6,8 @@ set -euo pipefail
 # Ask for sudo credentials now so the package commands do not fail halfway through.
 sudo -v
 if command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get update
-  sudo apt-get install -y unattended-upgrades fail2ban ufw
+  sudo apt-get -o DPkg::Lock::Timeout=600 update
+  sudo apt-get -o DPkg::Lock::Timeout=600 install -y unattended-upgrades fail2ban ufw
   sudo systemctl enable --now fail2ban
   sudo dpkg-reconfigure -f noninteractive unattended-upgrades
 else
