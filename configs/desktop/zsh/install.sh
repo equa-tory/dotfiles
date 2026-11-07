@@ -10,5 +10,6 @@ clone_or_update https://github.com/zsh-users/zsh-autosuggestions.git "$HOME/.loc
 source "$BOOTSTRAP_ROOT/lib/common.sh"
 install_config_link "$BOOTSTRAP_ROOT/configs/default/shell/shellrc" "$HOME/.config/shell/shellrc"
 install_config_link "$BOOTSTRAP_ROOT/configs/desktop/zsh/plugins.zsh" "$HOME/.config/zsh/plugins.zsh"
+install_config_link "$BOOTSTRAP_ROOT/configs/desktop/zsh/p10k.zsh" "$HOME/.p10k.zsh"
 ensure_source_line "$HOME/.zshrc" '[[ -r "$HOME/.config/shell/shellrc" ]] && source "$HOME/.config/shell/shellrc"'
 ensure_source_line "$HOME/.zshrc" '[[ -r "$HOME/.config/zsh/plugins.zsh" ]] && source "$HOME/.config/zsh/plugins.zsh"'
