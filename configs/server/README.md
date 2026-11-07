@@ -1,8 +1,9 @@
 Server modules are installed from `configs/server/<module>/install.sh`.
-FRP client and server are separate modules. Each prompts for the directory containing
-its binary and TOML config; blank input skips the optional module. You can set
-`FRP_SOURCE_DIR` to avoid the prompt. Each then prompts for a token; blank input
-generates one. Copy the printed value securely to the other side so both configs match.
+FRP client and server are separate modules. They install the official FRP release
+automatically (Linux amd64 v0.72.0 is bundled in this repo; other architectures
+download the matching upstream release). The client asks for the server address,
+token, and an optional local/remote TCP port mapping. The server asks for its bind
+port and token. Blank token input generates one; use the same value on both sides.
 Grafana prompts for its admin password; blank input generates one. Secrets are stored
 in local config files with mode 0600 and are never written to this repository.
 The reboot module schedules unattended-upgrade reboots for 03:00.
