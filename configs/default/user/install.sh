@@ -9,8 +9,8 @@ fi
 read -r -p 'New username: ' username
 [[ "$username" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || { echo 'Invalid username' >&2; exit 1; }
 if id "$username" >/dev/null 2>&1; then
-  echo "User already exists: $username" >&2
-  exit 1
+  echo "User already exists: $username; skipping account creation"
+  exit 0
 fi
 read -r -s -p "Password for $username: " password
 printf '\n'
