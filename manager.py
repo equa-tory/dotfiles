@@ -18,14 +18,41 @@ def modules():
         relative = script.parent.relative_to(BASE)
         if not relative.parts or relative.parts[0] not in PROFILES:
             continue
-        meta = {"description": relative.name, "default": "false"}
+        meta = {"description": relative.name, "default": "false", "after": []}
         for line in script.read_text(encoding="utf-8").splitlines()[:15]:
             if line.startswith("# description:"):
                 meta["description"] = line.split(":", 1)[1].strip()
             elif line.startswith("# default:"):
                 meta["default"] = line.split(":", 1)[1].strip().lower()
+            elif line.startswith("# after:"):
+                meta["after"] = line.split(":", 1)[1].split()
         results.append({"path": str(relative), "script": script, **meta})
     return results
+
+
+def order_modules(items):
+    """Apply optional # after: module/path execution dependencies."""
+    by_path = {item["path"]: item for item in items}
+    ordered = []
+    visiting = set()
+    visited = set()
+
+    def visit(path):
+        if path in visited:
+            return
+        if path in visiting:
+            raise ValueError(f"module execution dependency cycle at {path}")
+        visiting.add(path)
+        for dependency in by_path[path].get("after", []):
+            if dependency in by_path:
+                visit(dependency)
+        visiting.remove(path)
+        visited.add(path)
+        ordered.append(by_path[path])
+
+    for item in items:
+        visit(item["path"])
+    return ordered
 
 
 def tree(items):
@@ -130,7 +157,7 @@ def main():
             print("Cancelled")
             return 0
         selected = selection
-    targets = [m for m in items if m["path"] in selected]
+    targets = order_modules([m for m in items if m["path"] in selected])
     print("\nSelected modules:")
     for m in targets:
         print("  - " + m["path"])

@@ -29,6 +29,7 @@ set -euo pipefail
 ```
 
 Folders become group nodes; groups can be selected with Space. Newly added scripts are discovered automatically; no central registry to edit. Put extra scripts/templates next to install.sh (but only an `install.sh` is shown in the menu).
+Optional `# after: profile/module` metadata orders a module after another selected module. For example, `desktop/login-shell` runs after `desktop/packages` when both are selected.
 
 The default tools installer reads package names from `configs/default/tools/packages.txt`. Tool configuration installers live separately under `configs/default/.config/<tool>/`, so package installation and configuration can be selected independently. For example, select `default/tools` to install packages and `default/.config/tmux` to install the tmux configuration.
 

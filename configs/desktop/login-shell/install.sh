@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # description: Set Zsh as the current user's login shell
 # default: false
+# after: desktop/packages
 set -euo pipefail
 zsh_path="$(command -v zsh || true)"
 [[ -n "$zsh_path" ]] || { echo 'Install Zsh first' >&2; exit 1; }
