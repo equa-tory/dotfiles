@@ -20,7 +20,7 @@ sudo ufw --force enable
 
 # Install a managed drop-in, test the full effective config, then reload.
 sudo install -d -m 755 /etc/ssh/sshd_config.d
-dropin=/etc/ssh/sshd_config.d/90-bootstrap-hardening.conf
+dropin=/etc/ssh/sshd_config.d/00-bootstrap-hardening.conf
 tmp="$(mktemp)"
 cat > "$tmp" <<'SSH'
 PermitRootLogin no
