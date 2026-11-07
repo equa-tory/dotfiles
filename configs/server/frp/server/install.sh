@@ -3,9 +3,16 @@
 # default: false
 set -euo pipefail
 
-source_dir='/@/frp/frp'
+source_dir="${FRP_SOURCE_DIR:-}"
+if [[ -z "$source_dir" && -t 0 ]]; then
+  read -r -p 'FRP files directory (blank skips this module): ' source_dir
+fi
+if [[ -z "$source_dir" ]]; then
+  echo 'FRP server skipped: set FRP_SOURCE_DIR or enter a source directory.'
+  exit 0
+fi
 if [[ ! -x "$source_dir/frps" || ! -f "$source_dir/frps.toml" ]]; then
-  echo "FRP server files not found in $source_dir" >&2
+  echo "FRP server files not found in $source_dir (need frps and frps.toml)" >&2
   exit 1
 fi
 sudo -v
