@@ -13,14 +13,23 @@ systemd_quote() {
 source_dir='/@/t'
 [[ -f "$source_dir/requirements.txt" ]] || { echo "ILO API requirements not found in $source_dir" >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'Python 3 is required' >&2; exit 1; }
-read -r -s -p 'Shared auth token (must match client): ' auth_token
-printf '\n'
-[[ -n "$auth_token" ]] || { echo 'Auth token is required' >&2; exit 1; }
-read -r -s -p 'Telegram bot token: ' telegram_token
-printf '\n'
-[[ -n "$telegram_token" ]] || { echo 'Telegram bot token is required' >&2; exit 1; }
-read -r -p 'Telegram chat ID: ' chat_id
-[[ -n "$chat_id" ]] || { echo 'Telegram chat ID is required' >&2; exit 1; }
+while :; do
+  read -r -s -p 'Shared auth token (must match client): ' auth_token
+  printf '\n'
+  [[ -n "$auth_token" ]] && break
+  echo 'Auth token is required; please try again.' >&2
+done
+while :; do
+  read -r -s -p 'Telegram bot token: ' telegram_token
+  printf '\n'
+  [[ -n "$telegram_token" ]] && break
+  echo 'Telegram bot token is required; please try again.' >&2
+done
+while :; do
+  read -r -p 'Telegram chat ID: ' chat_id
+  [[ -n "$chat_id" ]] && break
+  echo 'Telegram chat ID is required; please try again.' >&2
+done
 
 sudo -v
 sudo install -d -m 755 /opt/ilo-boot-notify

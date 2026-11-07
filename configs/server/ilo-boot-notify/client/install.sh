@@ -12,9 +12,12 @@ systemd_quote() {
 
 read -r -p 'ILO API boot endpoint [http://equatory.ddns.net:5005/boot]: ' endpoint
 endpoint="${endpoint:-http://equatory.ddns.net:5005/boot}"
-read -r -s -p 'Shared auth token: ' auth_token
-printf '\n'
-[[ -n "$auth_token" ]] || { echo 'Auth token is required' >&2; exit 1; }
+while :; do
+  read -r -s -p 'Shared auth token: ' auth_token
+  printf '\n'
+  [[ -n "$auth_token" ]] && break
+  echo 'Auth token is required; please try again.' >&2
+done
 read -r -p 'Boot message [LOCAL SERVER ON]: ' message
 message="${message:-LOCAL SERVER ON}"
 
