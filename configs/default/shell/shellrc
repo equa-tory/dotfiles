@@ -1,34 +1,242 @@
-# Sourced by bash and zsh. Keep this portable: no arrays, no external requirements.
+# Shared by zsh and bash (sourced from ~/.zshrc / ~/.bashrc).
+
+# ==============================
+# EDITOR: the one the user chose in Setup > Defaults (uwsm env), else nvim, vim, nano
+# ==============================
+if [ -z "$EDITOR" ]; then
+  for _e in nvim vim nano; do
+    command -v "$_e" &>/dev/null && { EDITOR="$_e"; break; }
+  done
+  unset _e
+fi
+export EDITOR="${EDITOR:-vi}" VISUAL="${VISUAL:-$EDITOR}"
+
+if command -v sudo &>/dev/null; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
+
+# Use a widely available terminal definition for SSH from Kitty/Ghostty.
+# Scope TERM to the SSH process; preserve screen/tmux and other terminal types.
+# `command ssh ...` bypasses this compatibility wrapper when needed.
+ssh() {
+  case "${TERM:-}" in
+    xterm-kitty|xterm-ghostty|ghostty)
+      TERM=xterm-256color command ssh "$@"
+      ;;
+    *) command ssh "$@" ;;
+  esac
+}
+
+# ==============================
+# PYTHON
+# ==============================
+alias py='python3'
+alias vnv='source venv/bin/activate'
+alias vnvv='python3 -m venv venv && source venv/bin/activate'
+alias deac='deactivate'
+
+# ==============================
+# DOCKER  d
+# ==============================
+d() {
+  local cmd="$1"; shift
+  case "$cmd" in
+    # Containers
+    ps)          docker ps "$@" ;;
+    up)          docker compose up -d "$@" ;;
+    down)        docker compose down "$@" ;;
+    build)       docker compose build "$@" ;;
+    start)       $SUDO docker start "$@" ;;
+    stop)        $SUDO docker stop "$@" ;;
+    rm)          docker rm -f "$@" ;;
+    # Images
+    pull)        docker pull "$@" ;;
+    rmi)         docker rmi "$@" ;;
+    images)      docker images "$@" ;;
+    # Exec / logs
+    sh)          docker exec -it "$1" bash ;;
+    logs)        docker logs -f "$@" ;;
+    # Run: d run <image> [extra flags]
+    run)
+      local image="$1"; shift
+      local name="${image%%:*}"
+      docker run -d --name "$name" "$@" "$image"
+      ;;
+    *)           echo "d [ps|up|down|build|start|stop|rm|pull|rmi|images|sh|logs|run]"; return 1 ;;
+  esac
+}
+
+# ==============================
+# MISC UTILS
+# ==============================
+mdd()  { mkdir -p "$1" && cd "$1"; }
+port() { $SUDO lsof -i :"$1"; }
+
+# Find the local xray HTTP proxy (ports vary by host/config).
+_xray_proxy_url() {
+  local p fd
+  zmodload zsh/net/tcp 2>/dev/null || { print -u2 "cannot load zsh TCP support to check xray proxy"; return 1; }
+  for p in 10808 1080; do
+    if ztcp 127.0.0.1 $p 2>/dev/null; then
+      fd=$REPLY
+      ztcp -c $fd 2>/dev/null
+      REPLY="http://127.0.0.1:$p"
+      return 0
+    fi
+  done
+  print -u2 "xray proxy unavailable: neither 127.0.0.1:10808 nor 127.0.0.1:1080 is accepting connections"
+  return 1
+}
+
+# Claude Code through the local xray proxy
+claude-xray() {
+  local proxy
+  _xray_proxy_url || return 1
+  proxy=$REPLY
+  HTTPS_PROXY=$proxy HTTP_PROXY=$proxy https_proxy=$proxy http_proxy=$proxy \
+  NO_PROXY="" claude "$@"
+}
+alias cx=codex-xray
+
+# Codex through the local xray proxy
+codex-xray() {
+  local proxy
+  _xray_proxy_url || return 1
+  proxy=$REPLY
+  HTTPS_PROXY=$proxy HTTP_PROXY=$proxy https_proxy=$proxy http_proxy=$proxy \
+  NO_PROXY="" codex "$@"
+}
+
+# ==============================
+# ALIASES - GENERAL
+# ==============================
 alias ..='cd ..'
 alias ...='cd ../..'
-alias grep='grep --color=auto'
+alias ....='cd ../../..'
+alias c='clear'
+alias cls='clear'
+alias cl='clear'
+alias h='history -10'
+alias x='exit'
+alias q='exit'
+alias a='alias | grep'
+command -v watch >/dev/null 2>&1 && alias w='watch -n 1'
+
+unalias r 2>/dev/null
+r() {
+  if [ -n "$ZSH_VERSION" ]; then
+    source ~/.zshrc
+  elif [ -n "$BASH_VERSION" ]; then
+    source ~/.bashrc
+  fi
+}
+
+# ==============================
+# LS & DIRECTORY
+# ==============================
+alias l='ls'
 if command -v eza >/dev/null 2>&1; then
-  alias ll='eza -lah'
+  alias ll='eza -lah --group-directories-first --sort=modified'
 else
   alias ll='ls -lah'
 fi
-if command -v nvim >/dev/null 2>&1; then
-  alias v='nvim'
-elif command -v vim >/dev/null 2>&1; then
-  alias v='vim'
-else
-  alias v='vi'
-fi
-if command -v rg >/dev/null 2>&1; then
-  alias rgrep='rg'
-fi
+alias la='ls -a'
+alias md='mdd'
+alias desk='cd ~/Desktop'
+alias dl='cd ~/Downloads'
+alias dev='cd ~/Developer'
+
+# ==============================
+# MISC
+# ==============================
+alias s='sudo '
+alias sc='screen'
+alias scl='screen -list'
+alias ff='clear; fastfetch -c ~/.local/state/torii/theme/fastfetch.jsonc 2>/dev/null || fastfetch'
+command -v nvidia-smi >/dev/null 2>&1 && alias smi='nvidia-smi'
+alias g='rg'
 if command -v fd >/dev/null 2>&1; then
   alias f='fd'
 elif command -v fdfind >/dev/null 2>&1; then
   alias f='fdfind'
-else
-  alias f='find . -name'
 fi
-# Initialize zoxide only when installed and in an interactive shell.
-if command -v zoxide >/dev/null 2>&1; then
-  if [ -n "${ZSH_VERSION-}" ]; then
-    eval "$(zoxide init zsh)"
-  elif [ -n "${BASH_VERSION-}" ]; then
-    eval "$(zoxide init bash)"
+alias tren='trans -b :en'
+alias trru='trans -b :ru'
+alias myip='curl ifconfig.me'
+
+# ==============================
+# TMUX & JOURNAL
+# ==============================
+alias t='tmux'
+alias ta='tmux attach'
+alias ju='journalctl -u'
+alias jsshd='journalctl -u sshd --since "24 hours ago" | grep "Accepted"'
+alias jssh='journalctl -u ssh --since "24 hours ago" | grep "Accepted"'
+alias jsudo='journalctl _COMM=sudo'
+
+# ==============================
+# SYSTEMCTL
+# ==============================
+alias sstatus='$SUDO systemctl status'
+alias sstart='$SUDO systemctl start'
+alias sstop='$SUDO systemctl stop'
+alias senable='$SUDO systemctl enable'
+alias sdisable='$SUDO systemctl disable'
+alias sdaemon='$SUDO systemctl daemon-reload'
+alias slist='$SUDO ls /etc/systemd/system/ | grep .service'
+
+sedit() {
+  if [[ -z "$1" ]]; then
+    echo "Usage: sedit <service>"
+    return 1
   fi
+  $SUDO ${EDITOR} "/etc/systemd/system/${1}.service" && $SUDO systemctl daemon-reload
+}
+
+srestart() {
+  $SUDO systemctl restart "$1" && $SUDO systemctl status "$1"
+}
+
+# ==============================
+# EDITORS
+# ==============================
+alias v='$EDITOR'
+[ "$EDITOR" = nvim ] && alias vim='nvim'
+alias n='nano'
+alias rc='$EDITOR ~/.config/dotfiles/shellrc'
+alias mc='yazi'
+
+# ==============================
+# STARTUP
+# ==============================
+export PATH="$HOME/.local/bin:$HOME/.config/torii/bin:$PATH"
+
+# a server that does not know our terminal (e.g. xterm-kitty over ssh) breaks clear, tmux, nvim: use a common one instead
+if [ -n "$TERM" ] && command -v infocmp >/dev/null 2>&1 && ! infocmp "$TERM" >/dev/null 2>&1; then
+  export TERM=xterm-256color
 fi
+
+c
+
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init "${SHELL##*/}" --cmd cd)"
+if [ -n "$ZSH_VERSION" ] && command -v fzf >/dev/null 2>&1; then
+  source <(fzf --zsh 2>/dev/null) 2>/dev/null
+fi
+
+# open FILE: video / audio / pictures / pdf / text / json / code / databases / .exe with the right app, asks when none is set
+# (torii-open --list shows them, open -c FILE chooses again). On macOS the system `open` stays.
+[ "$(uname)" = Linux ] && command -v torii-open >/dev/null 2>&1 && alias open='torii-open'
+
+# y: file manager in the terminal (yazi). Arrows / h j k l move, Enter opens (through `open`), q leaves and cd's to where you were.
+y() {
+  command -v yazi >/dev/null 2>&1 || { echo "yazi is not installed"; return 1; }
+  local tmp cwd; tmp="$(mktemp -t yazi-cwd.XXXXXX)"
+  yazi "$@" --cwd-file="$tmp"
+  cwd="$(cat -- "$tmp" 2>/dev/null)"; rm -f -- "$tmp"
+  [ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && cd -- "$cwd"
+}
+
+# gdu: skips network shares below the folder (gdu /mnt took ages walking the Samba shares) and reads a spinning disk one file at a time
+command -v torii-gdu >/dev/null 2>&1 && alias gdu='torii-gdu'

@@ -48,3 +48,9 @@ Modules run as the invoking user. Use `sudo` only for the specific operations th
 
 `configs/default/tools/packages.txt` contains one package name per line. The default package module reads
 this file and maps the names to the supported package manager.
+
+## Server utility
+
+Use the current `srv` command installed at `~/.local/bin/srv`. The obsolete
+`bin/srv` from the previous dotfiles layout is not part of this repository.
+Older standalone scripts are archived under `scripts/legacy/`.
