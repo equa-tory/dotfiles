@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# srv - dorm box manager. Stripped down 2026-09-05 to what actually gets
+# used: the live watcher, cleanup, xray, frp, and the config push/pull.
+# See NEXT.md for what to do next and why - that file is meant to be read,
+# this isn't. Each subcommand lives in lib/<name>.sh and also runs standalone:
+#   bash ~/srv/_ops/lib/live.sh
+# is exactly the same as:
+#   srv live
+set -euo pipefail
+
+# readlink -f resolves through symlinks (e.g. ~/.local/bin/srv -> here) to
+# the real physical location - plain dirname on BASH_SOURCE would resolve
+# relative to the symlink's own directory instead and break LIB_DIR.
+OPS_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LIB_DIR="$OPS_DIR/lib"
+export OPS_DIR LIB_DIR
+
+usage() {
+  cat <<'EOF'
+srv - dorm box manager
+
+  srv                     the friendly menu - arrows to pick, type to
+                          filter, clears the screen between steps
+  srv live [edit]         live-refreshing view (GPU/ollama/top by default,
+                          e to edit which sections show, u to undo the last
+                          edit, q to quit) - one tmux pane per section,
+                          falls back to a single view without tmux
+  srv live undo|reset     restore the config before the last edit / back
+                          to defaults (also works if the view is broken)
+  srv space [prune]       disk usage report / prune candidates
+  srv clean               same as `srv space prune` - pick what to delete,
+                           asks before deleting anything
+  srv xray [import <vless://...>]   show/replace the outbound proxy
+  srv frp [add|rm|on|off]           manage tunnels in ~/frp/frpc.toml
+  srv conf [capture|push|pull|sync|status]
+  srv pull                get the latest config from github (same as `srv conf pull`)
+  srv push                save + upload your changes (same as `srv conf sync`)
+  srv setup               (re)detect this machine's settings
+
+See NEXT.md for what to do next.
+EOF
+}
+
+cmd="${1:-menu}"
+[[ $# -gt 0 ]] && shift || true
+
+case "$cmd" in
+  menu)           exec bash "$LIB_DIR/menu.sh" "$@" ;;
+  live)           exec bash "$LIB_DIR/live.sh" "$@" ;;
+  space)          exec bash "$LIB_DIR/space.sh" "$@" ;;
+  clean)          exec bash "$LIB_DIR/space.sh" prune "$@" ;;
+  xray)           exec bash "$LIB_DIR/xray.sh" "$@" ;;
+  frp)            exec bash "$LIB_DIR/frp.sh" "$@" ;;
+  setup)          exec bash -c 'source "$1/lib/ui.sh"; source "$1/lib/config.sh"; srv_config_setup' _ "$OPS_DIR" ;;
+  conf)           exec bash "$LIB_DIR/conf.sh" "$@" ;;
+  pull)           exec bash "$LIB_DIR/conf.sh" pull "$@" ;;
+  push)           exec bash "$LIB_DIR/conf.sh" sync "$@" ;;
+  -h|--help|help) usage ;;
+  *)
+    echo "srv: unknown command '$cmd'" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

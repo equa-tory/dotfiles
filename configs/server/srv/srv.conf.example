@@ -1,0 +1,51 @@
+# srv.conf.example - documents every key lib/config.sh understands. This
+# file is committed so you can see what's configurable; it's never read
+# directly. Your real, per-machine settings live at ops/.state/srv.conf,
+# written by `srv setup` (or automatically the first time you run `srv` on
+# a box with no srv.conf yet) - .state/ is gitignored, so each machine keeps
+# its own values and nothing here syncs between boxes.
+#
+# Every key is optional. A missing key falls back to a detected default, so
+# srv works before you've configured anything - srv.conf only exists to let
+# you override what got detected.
+#
+# Values below are dorm's actual settings, as an example of the shape.
+
+# Where `srv backup` writes snapshots: $BACKUP_ROOT/<app>/<timestamp>/
+# Default: /mnt/nas/backups/state if that dir exists, else ~/backups
+BACKUP_ROOT=/mnt/nas/backups/state
+
+# Where `srv conf capture` writes redacted configs (the "conf/" half of
+# this repo). Default: the repo's own conf/ dir, resolved through symlinks.
+CONF_DIR=/home/equa/srv/dorm-config/conf
+
+# Where systemd unit files live.
+SYSTEMD_DIR=/etc/systemd/system
+
+# nginx's config root (sites-available/, snippets/, proxy_params live
+# under here).
+NGINX_DIR=/etc/nginx
+
+# Your home directory - used by srv space's stray-file candidates list.
+HOME_DIR=/home/equa
+
+# Mount points `srv live`'s disk section shows. Default: every real
+# filesystem findmnt reports (minus /boot and pseudo-filesystems like
+# tmpfs). Mark a network mount and it'll be skipped gracefully if it's
+# ever unreachable.
+WATCH_DISKS=(/ /mnt/nas /mnt/ssd /mnt/videos)
+
+# Detected automatically (apt/pacman/unknown) - recorded for future use,
+# nothing branches on it yet.
+PKG_MGR=apt
+
+# Root of the local Arch package mirror `srv mirror` manages (only relevant
+# if you host one). Default: /mnt/nas/mirror/archlinux if it looks like a
+# real mirror (has pool/packages), else unset - "srv mirror" then just says
+# "not configured" instead of erroring.
+ARCH_MIRROR_ROOT=/mnt/nas/mirror/archlinux
+
+# Where `srv mirror sync` rsyncs FROM. Nothing on a mirror records its own
+# origin, so this can't be auto-detected - defaults to a well-known public
+# Arch rsync mirror, yours to accept or point at one closer to you.
+ARCH_MIRROR_UPSTREAM=rsync://mirrors.kernel.org/archlinux/

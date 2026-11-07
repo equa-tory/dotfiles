@@ -13,3 +13,5 @@ from its environment file. If UFW is enabled, allow TCP port 5005 only from the
 client machines or networks that need to reach the API.
 The Alloy installer is a placeholder until its configuration is ready.
 See `docs/security-check.md` for post-install manual checks.
+The `srv` module installs the current modular server helper to
+`~/.local/bin/srv`; its source and modules are in `configs/server/srv/`.
