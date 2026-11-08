@@ -1,0 +1,26 @@
+- name: Check fleet access and Alloy
+  hosts: fleet
+  gather_facts: false
+  tasks:
+    - name: Check SSH and Python access
+      ansible.builtin.ping:
+    - name: Read Alloy service state
+      ansible.builtin.command:
+        argv: [systemctl, is-active, alloy]
+      register: alloy_service
+      changed_when: false
+      failed_when: false
+      check_mode: false
+    - name: Read installed Alloy version
+      ansible.builtin.command:
+        argv: [/usr/bin/alloy, --version]
+      register: alloy_version_result
+      changed_when: false
+      failed_when: false
+      check_mode: false
+    - name: Show status
+      ansible.builtin.debug:
+        msg:
+          machine: "{{ inventory_hostname }}"
+          alloy: "{{ alloy_service.stdout | default('not installed') }}"
+          version: "{{ alloy_version_result.stdout_lines | default([]) | first | default('not installed') }}"

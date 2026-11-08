@@ -11,7 +11,7 @@ Caddy requires BOTH a listed source IP and a valid agent username/password. It a
 | hip-usa | 213.108.3.101 |
 | hip-fin | 193.32.179.127 |
 | hip-nid | 171.22.30.82 |
-| nuxt-fin | 31.76.226.14 |
+| nuxt-fin | 31.76.226.149 |
 
 The existing gateway VPS now emits new logs under `hip-nid`; older logs retain the historical `equatory` label until retention expires.
 

@@ -1,0 +1,54 @@
+- name: Update native Alloy one server at a time
+  hosts: fleet
+  gather_facts: true
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Require a supported distribution
+      ansible.builtin.assert:
+        that: ansible_facts.os_family == 'Debian'
+        fail_msg: This update action supports Debian/Ubuntu native Alloy packages only.
+    - name: Read installed packages
+      ansible.builtin.package_facts:
+        manager: auto
+    - name: Require an existing native Alloy installation
+      ansible.builtin.assert:
+        that: "'alloy' in ansible_facts.packages"
+        fail_msg: Run the interactive logging/Alloy installer first. Docker Alloy is not changed by this action.
+    - name: Validate the current config before updating
+      ansible.builtin.command:
+        argv: [/usr/bin/alloy, validate, /etc/alloy/config.alloy]
+      changed_when: false
+      check_mode: false
+    - name: Update only Alloy and preserve existing configuration
+      ansible.builtin.apt:
+        name: "{{ 'alloy=' + fleet_alloy_version if fleet_alloy_version is defined else 'alloy' }}"
+        state: "{{ 'present' if fleet_alloy_version is defined else 'latest' }}"
+        update_cache: true
+        cache_valid_time: 3600
+        only_upgrade: true
+        dpkg_options: force-confdef,force-confold
+        fail_on_autoremove: true
+        policy_rc_d: 101
+      register: alloy_update
+    - name: Validate config using the updated binary
+      ansible.builtin.command:
+        argv: [/usr/bin/alloy, validate, /etc/alloy/config.alloy]
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Restart Alloy only when its package changed
+      ansible.builtin.systemd_service:
+        name: alloy
+        state: restarted
+        daemon_reload: true
+      when: alloy_update.changed and not ansible_check_mode
+    - name: Wait for the local Alloy health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:12345/-/ready
+        status_code: 200
+      register: alloy_health
+      retries: 10
+      delay: 3
+      until: alloy_health.status == 200
+      when: not ansible_check_mode

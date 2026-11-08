@@ -1,0 +1,18 @@
+- name: Add public SSH keys without deleting existing access
+  hosts: fleet
+  gather_facts: false
+  tasks:
+    - name: Verify a key payload was supplied by the controller
+      ansible.builtin.assert:
+        that:
+          - fleet_public_keys is defined
+          - fleet_public_keys | length > 0
+        fail_msg: Use fleet keys so downloaded public keys are validated first.
+    - name: Merge public keys into the login user's authorized keys
+      ansible.posix.authorized_key:
+        user: "{{ fleet_key_user | default(ansible_user) }}"
+        key: "{{ fleet_public_keys }}"
+        state: present
+        exclusive: false
+        manage_dir: true
+      become: "{{ (fleet_key_user | default(ansible_user)) != ansible_user }}"
