@@ -14,7 +14,8 @@ else
   echo 'This starter security installer currently supports Debian and Ubuntu only.' >&2
   exit 1
 fi
-# Allow the standard SSH service before enabling UFW.
+# UFW allow/enable are additive: preserve existing rules and add SSH before
+# enabling the firewall. Do not reset or replace the user's current rules.
 sudo ufw allow OpenSSH
 sudo ufw --force enable
 

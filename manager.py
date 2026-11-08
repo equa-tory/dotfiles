@@ -68,24 +68,64 @@ def tree(items):
     return sorted(entries, key=lambda e: (e["path"].split("/"), e["kind"] == "module"))
 
 
+def fuzzy_match(query, text):
+    """Return whether query's characters appear in order in text."""
+    text_iter = iter(text.casefold())
+    return all(any(char == candidate for candidate in text_iter) for char in query.casefold())
+
+
+def filtered_tree(entries, query):
+    if not query:
+        return entries
+    matching_modules = {
+        entry["path"]
+        for entry in entries
+        if entry["kind"] == "module"
+        and fuzzy_match(query, entry["path"] + " " + entry["description"])
+    }
+    visible = []
+    for entry in entries:
+        if entry["kind"] == "module":
+            if entry["path"] in matching_modules:
+                visible.append(entry)
+            continue
+        prefix = entry["path"] + "/"
+        if fuzzy_match(query, entry["path"]) or any(path.startswith(prefix) for path in matching_modules):
+            visible.append(entry)
+    return visible
+
+
 def select_ui(screen, items, selected):
     curses.curs_set(0)
     screen.keypad(True)
     entries = tree(items)
     pos = 0
     offset = 0
-    message = "Space: toggle | a: all on | n: all off | Enter: run | q: quit"
+    query = ""
+    search_mode = False
     while True:
         height, width = screen.getmaxyx()
         screen.erase()
         screen.addnstr(0, 0, "equa-bootstrap  |  modules discovered automatically", max(0, width - 1), curses.A_BOLD)
+        if search_mode:
+            message = f"Fuzzy search: {query}  (Enter: finish, Esc: clear)"
+        elif query:
+            message = f"Filter: {query}  |  /: edit search"
+        else:
+            message = "Type to fuzzy filter | /: search | a: all | n: none"
         screen.addnstr(1, 0, message, max(0, width - 1))
         available = max(1, height - 4)
+        visible_entries = filtered_tree(entries, query)
+        if not visible_entries:
+            pos = 0
+            offset = 0
+        elif pos >= len(visible_entries):
+            pos = len(visible_entries) - 1
         if pos < offset:
             offset = pos
         if pos >= offset + available:
             offset = pos - available + 1
-        for row, entry in enumerate(entries[offset:offset+available], start=3):
+        for row, entry in enumerate(visible_entries[offset:offset+available], start=3):
             path = entry["path"]
             depth = path.count("/")
             if entry["kind"] == "group":
@@ -99,19 +139,43 @@ def select_ui(screen, items, selected):
             line = "  " * depth + indicator + " " + label
             attr = curses.A_REVERSE if (offset + row - 3) == pos else 0
             screen.addnstr(row, 0, line, max(0, width - 1), attr)
-        screen.addnstr(height - 1, 0, f"Selected {len(selected)}/{len(items)} | Enter: execute", max(0,width-1))
+        screen.addnstr(height - 1, 0, f"Selected {len(selected)}/{len(items)} | ↑/↓ move · PgUp/PgDn page · Enter run · q quit", max(0,width-1))
         screen.refresh()
         key = screen.getch()
+        if search_mode:
+            if key in (10, 13, curses.KEY_ENTER):
+                search_mode = False
+            elif key in (27,):
+                query = ""
+                pos = offset = 0
+                search_mode = False
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                query = query[:-1]
+                pos = offset = 0
+            elif key >= 0 and key < 256 and chr(key).isprintable():
+                query += chr(key)
+                pos = offset = 0
+            continue
         if key in (curses.KEY_UP, ord('k')):
             pos = max(0, pos - 1)
         elif key in (curses.KEY_DOWN, ord('j')):
-            pos = min(len(entries) - 1, pos + 1)
+            pos = min(len(visible_entries) - 1, pos + 1) if visible_entries else 0
+        elif key == curses.KEY_PPAGE:
+            pos = max(0, pos - available)
+            offset = max(0, offset - available)
+        elif key == curses.KEY_NPAGE:
+            pos = min(len(visible_entries) - 1, pos + available) if visible_entries else 0
+            offset = min(max(0, len(visible_entries) - available), offset + available)
+        elif key == ord('/'):
+            search_mode = True
         elif key == ord('a'):
             selected.update(m["path"] for m in items)
         elif key == ord('n'):
             selected.clear()
         elif key == ord(' '):
-            entry = entries[pos]
+            if not visible_entries:
+                continue
+            entry = visible_entries[pos]
             paths = [entry["path"]] if entry["kind"] == "module" else [m["path"] for m in items if m["path"].startswith(entry["path"] + "/")]
             if all(path in selected for path in paths):
                 selected.difference_update(paths)
@@ -120,7 +184,17 @@ def select_ui(screen, items, selected):
         elif key in (10, 13, curses.KEY_ENTER):
             return selected
         elif key in (ord('q'), 27):
-            return None
+            if query:
+                query = ""
+                pos = offset = 0
+            else:
+                return None
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            query = query[:-1]
+            pos = offset = 0
+        elif key >= 0 and key < 256 and chr(key).isprintable() and chr(key).lower() not in ("a", "n"):
+            query += chr(key)
+            pos = offset = 0
 
 
 def main():
