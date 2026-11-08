@@ -74,72 +74,82 @@ d() {
 mdd()  { mkdir -p "$1" && cd "$1"; }
 port() { $SUDO lsof -i :"$1"; }
 
-# Find a working local xray HTTP proxy (ports vary by host/config).
+# Find the local xray HTTP proxy (ports vary by host/config).
 _xray_proxy_url() {
-  local p proxy
+  local p fd
+  zmodload zsh/net/tcp 2>/dev/null || { print -u2 "cannot load zsh TCP support to check xray proxy"; return 1; }
   for p in 10808 1080; do
-    proxy="http://127.0.0.1:$p"
-    if curl --silent --head --max-time 5 --noproxy '' \
-      --proxy "$proxy" https://registry.npmjs.org/ >/dev/null 2>&1; then
-      printf '%s\n' "$proxy"
+    if ztcp 127.0.0.1 $p 2>/dev/null; then
+      fd=$REPLY
+      ztcp -c $fd 2>/dev/null
+      REPLY="http://127.0.0.1:$p"
       return 0
     fi
   done
-  printf '%s\n' 'xray proxy unavailable: checked 127.0.0.1:10808 and :1080' >&2
+  print -u2 "xray proxy unavailable: neither 127.0.0.1:10808 nor 127.0.0.1:1080 is accepting connections"
   return 1
 }
 
 # Claude Code through the local xray proxy
 claude-xray() {
   local proxy
-  proxy=$(_xray_proxy_url) || return 1
+  _xray_proxy_url || return 1
+  proxy=$REPLY
   HTTPS_PROXY=$proxy HTTP_PROXY=$proxy https_proxy=$proxy http_proxy=$proxy \
   NO_PROXY="" claude "$@"
 }
+alias cx=codex-xray
 
 # Codex through the local xray proxy
 codex-xray() {
   local proxy
-  proxy=$(_xray_proxy_url) || return 1
+  _xray_proxy_url || return 1
+  proxy=$REPLY
   HTTPS_PROXY=$proxy HTTP_PROXY=$proxy https_proxy=$proxy http_proxy=$proxy \
   NO_PROXY="" codex "$@"
 }
 
-# Update the globally installed Codex CLI through the local xray proxy.
-_codex_npm_update() {
-  local proxy="$1" npm_root
-  npm_root="$(npm root -g 2>/dev/null)" || { echo 'npm is required to update Codex CLI' >&2; return 1; }
-  if [ -w "$npm_root" ]; then
-    HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" https_proxy="$proxy" http_proxy="$proxy" \
-      NO_PROXY="" npm install --global @openai/codex@latest
-  else
-    sudo env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" https_proxy="$proxy" http_proxy="$proxy" \
-      NO_PROXY="" npm install --global @openai/codex@latest
-  fi
-  codex --version
-}
-
+# Update Codex through the local xray proxy
 codex-update() {
-  local proxy
-  proxy=$(_xray_proxy_url) || return 1
-  _codex_npm_update "$proxy"
+  local proxy prefix metadata latest installed
+  local -a elevate
+  _xray_proxy_url || return 1
+  proxy=$REPLY
+  printf 'Checking npm registry through %s...\n' "$proxy"
+  if ! metadata=$(curl --noproxy '' --proxy "$proxy" --connect-timeout 5 --max-time 15 \
+    --fail --silent --show-error https://registry.npmjs.org/@openai%2fcodex/latest); then
+    printf 'Cannot reach npm through xray; check the proxy connection and try again.\n' >&2
+    return 1
+  fi
+  latest=$(printf '%s' "$metadata" | node -e '
+    let s = ""; process.stdin.on("data", d => s += d);
+    process.stdin.on("end", () => {
+      try {
+        const v = JSON.parse(s).version;
+        if (!/^\d+\.\d+\.\d+$/.test(v)) process.exit(1);
+        console.log(v);
+      } catch { process.exit(1); }
+    });') || { printf 'Invalid version returned by npm registry.\n' >&2; return 1; }
+  prefix=$(npm prefix -g) || return 1
+  installed=$(node -p 'require(process.argv[1]).version' "$prefix/lib/node_modules/@openai/codex/package.json" 2>/dev/null)
+  if [ "$installed" = "$latest" ] && [ "$#" -eq 0 ]; then
+    printf 'Codex %s is already up to date.\n' "$installed"
+    return 0
+  fi
+  elevate=()
+  if [ ! -w "$prefix" ] || { [ -d "$prefix/lib/node_modules" ] && [ ! -w "$prefix/lib/node_modules" ]; }; then
+    elevate=(sudo)
+    printf 'Updating the system installation; sudo may ask for your password.\n'
+    sudo -v || return 1
+  fi
+  printf 'Updating Codex (npm download progress follows)...\n'
+  "${elevate[@]}" env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" https_proxy="$proxy" http_proxy="$proxy" \
+    NO_PROXY="" no_proxy="" npm install -g "@openai/codex@$latest" --prefix="$prefix" \
+    --registry=https://registry.npmjs.org --proxy="$proxy" --https-proxy="$proxy" \
+    --fetch-retries=0 \
+    --fetch-timeout=60000 --no-audit --no-fund --loglevel=http "$@"
 }
-
-# Update the same npm install remotely, forwarding this machine's proxy over SSH.
-# Usage: codex-update-remote [user@host] (defaults to equa@192.168.1.50)
-codex-update-remote() {
-  local proxy local_port remote_port host remote_command remote_proxy
-  proxy=$(_xray_proxy_url) || return 1
-  local_port="${proxy##*:}"
-  remote_port=18080
-  remote_proxy="http://127.0.0.1:$remote_port"
-  host="${1:-equa@192.168.1.50}"
-  remote_command="if [ -w \"\$(npm root -g 2>/dev/null)\" ]; then HTTPS_PROXY=$remote_proxy HTTP_PROXY=$remote_proxy https_proxy=$remote_proxy http_proxy=$remote_proxy NO_PROXY= npm install --global @openai/codex@latest; else sudo env HTTPS_PROXY=$remote_proxy HTTP_PROXY=$remote_proxy https_proxy=$remote_proxy http_proxy=$remote_proxy NO_PROXY= npm install --global @openai/codex@latest; fi && codex --version"
-  ssh -o ExitOnForwardFailure=yes -R "127.0.0.1:$remote_port:127.0.0.1:$local_port" -t "$host" "$remote_command"
-}
-alias cx=codex-xray
-alias codexup=codex-update
-alias codexup50=codex-update-remote
+alias cx-update=codex-update
 
 # ==============================
 # ALIASES - GENERAL
