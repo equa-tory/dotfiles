@@ -1,0 +1,52 @@
+logging { level = "warn" }
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label = "service_name"
+  }
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    regex = "(.+)"
+    target_label = "service_name"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label = "level"
+  }
+}
+loki.source.journal "system" {
+  max_age = "24h"
+  labels = { host = __HOST__, source = "journal", job = "systemd" }
+  relabel_rules = loki.relabel.journal.rules
+  forward_to = [loki.write.home.receiver]
+}
+// __DOCKER__
+local.file_match "applications" {
+  path_targets = [
+    { __path__ = "/var/log/x-ui/*.log", host = __HOST__, source = "file", service_name = "x-ui" },
+    { __path__ = "/var/log/caddy/*.log", host = __HOST__, source = "file", service_name = "caddy" },
+    { __path__ = "/var/log/samba/log.*", host = __HOST__, source = "file", service_name = "samba" },
+    { __path__ = "/var/log/dpkg.log", host = __HOST__, source = "file", service_name = "packages" },
+    { __path__ = "/var/log/apt/*.log", host = __HOST__, source = "file", service_name = "packages" },
+    { __path__ = "/var/log/unattended-upgrades/*.log", host = __HOST__, source = "file", service_name = "packages" },
+    { __path__ = "/var/log/fail2ban.log", host = __HOST__, source = "file", service_name = "fail2ban" },
+    { __path__ = "/var/log/nginx/*.log", host = __HOST__, source = "file", service_name = "nginx" },
+    { __path__ = "/var/log/xray/*.log", host = __HOST__, source = "file", service_name = "xray" },
+    { __path__ = "/var/log/archmirror.log", host = __HOST__, source = "file", service_name = "archmirror" },
+  ]
+}
+loki.source.file "applications" {
+  targets = local.file_match.applications.targets
+  tail_from_end = true
+  forward_to = [loki.write.home.receiver]
+}
+loki.write "home" {
+  endpoint {
+    url = __ENDPOINT__
+    basic_auth {
+      username = __USERNAME__
+      password_file = "/etc/alloy/loki.password"
+    }
+  }
+}

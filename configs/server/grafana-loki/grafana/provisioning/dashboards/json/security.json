@@ -1,0 +1,205 @@
+{
+  "uid": "fleet-security",
+  "title": "SSH and Security Logs",
+  "tags": [
+    "logs",
+    "fleet"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Machine",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({source=~\".+\"}, host)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({host=~\"$host\"}, service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "source",
+        "label": "Source",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({host=~\"$host\",service_name=~\"$service\"}, source)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "search",
+        "label": "Contains text",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Security search",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Choose a machine and time range; leave Service and Source set to All and Contains text empty for the full view. SSH probes often appear as **Connection closed \u2026 [preauth]**, without a failed-password message. These are connection/authentication events, not proof of successful access. Fail2ban **Found** means a filter matched; **Ban** means a ban action. Firewall events appear only when firewall logging is enabled."
+      }
+    },
+    {
+      "id": 2,
+      "title": "SSH probes and authentication events",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)sshd|authentication failure|failed password|accepted publickey|accepted password|invalid user|preauth|connection closed|unable to negotiate|identification string\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Sudo and firewall",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)sudo|ufw block|ufw reject\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Fail2ban detections and ban actions",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",service_name=\"fail2ban\"} |= ${search:doublequote}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Fleet Logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "SSH and Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ]
+}

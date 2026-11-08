@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# description: Alloy setup pending configuration
+# description: Install Alloy VPS agent with HTTPS credentials and named logs
 # default: false
+# after: server/loki-caddy
 set -euo pipefail
-echo 'Alloy setup is pending configuration.'
+MODULE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$MODULE_DIR/../logging/agent.py"

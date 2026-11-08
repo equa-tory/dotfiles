@@ -14,7 +14,7 @@ bot token and chat ID. Values are stored in `/etc/ilo-boot-notify/*.env` with
 mode 0600. The server implementation is installed locally and reads secrets
 from its environment file. If UFW is enabled, allow TCP port 5005 only from the
 client machines or networks that need to reach the API.
-The Alloy installer is a placeholder until its configuration is ready.
+The Alloy module installs named VPS log collectors. The loki-caddy module configures authenticated HTTPS ingestion with an IP allowlist. The grafana-loki module installs the central stack and dashboards. See [logging/README.md](logging/README.md) for setup and your fleet inventory.
 See `docs/security-check.md` for post-install manual checks.
 The `srv` module installs the current modular server helper to
 `~/.local/bin/srv`; its source and modules are in `configs/server/srv/`.

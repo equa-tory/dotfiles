@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://equatory.ddns.net:3443/loki/api/v1/push",
+  "machines": {
+    "hip-japan": "45.66.166.180",
+    "hip-usa": "213.108.3.101",
+    "hip-fin": "193.32.179.127",
+    "hip-nid": "171.22.30.82",
+    "nuxt-fin": "31.76.226.14"
+  }
+}

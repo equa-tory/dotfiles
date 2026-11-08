@@ -1,0 +1,230 @@
+{
+  "uid": "fleet-logs",
+  "title": "Fleet Logs",
+  "tags": [
+    "logs",
+    "fleet"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Machine",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({source=~\".+\"}, host)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({host=~\"$host\"}, service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "source",
+        "label": "Source",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "query": "label_values({host=~\"$host\",service_name=~\"$service\"}, source)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "search",
+        "label": "Contains text",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Start here",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Choose a **Machine**, **Service**, and **Source**, then type into **Contains text**. Empty text shows everything. Change the time range at the top right. Expand a log line to inspect its labels.\n\n**dorm** = 192.168.1.50 \u00b7 **hip-nid** = VPS \u00b7 **journal** = system services/kernel \u00b7 **docker** = container output \u00b7 **file** = application log files. For advanced searches, open **Explore \u2192 Loki**."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Log rate by machine / service",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 16,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host,service_name) (rate({host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote}[$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{host}} / {{service_name}}"
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Error / failure matches per second",
+      "type": "timeseries",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host) (rate({host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)error|fatal|panic|failed\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{host}} / {{service_name}}"
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Search logs",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote}",
+          "queryType": "range",
+          "legendFormat": "{{host}} / {{service_name}}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Warnings and errors from the journal",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} | level =~ \"warning|error|critical|alert|emergency\"",
+          "queryType": "range",
+          "legendFormat": "{{host}} / {{service_name}}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Fleet Logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "SSH and Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ]
+}

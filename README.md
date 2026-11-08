@@ -37,13 +37,13 @@ Modules run as the invoking user. Use `sudo` only for the specific operations th
 
 ## Scope and limitations
 
-- Implemented: shell aliases/TERM fallback, package list, GitHub SSH keys, local tmux/Neovim configs, desktop tools and mirrors, explicit Torii launcher, FRP, Alloy placeholder, Grafana/Loki, and server security settings.
+- Implemented: shell aliases/TERM fallback, package list, GitHub SSH keys, local tmux/Neovim configs, desktop tools and mirrors, explicit Torii launcher, FRP, Alloy VPS agents and Caddy ingestion, Grafana/Loki, and server security settings.
 - System administration installers **must** validate environment/ports before changing configs and must refuse to lock out the current SSH connection.
 - `--dry-run` lists selected scripts; it cannot predict each installer’s side effects yet.
 - Current `--profile` replaces the default selection (it does not automatically include common modules); use interactive menu for combinations.
 - The optional default user module creates an administrator account after prompting for its username and password.
 - Most macOS tools need Homebrew installed separately.
-- Avoid exposing Loki (auth disabled) or Grafana directly on an unrestricted public address.
+- Use authenticated Caddy HTTPS for remote log ingestion; raw Loki stays private. Grafana binds to loopback by default on fresh installs.
 
 ## Package list
 
@@ -55,3 +55,7 @@ this file and maps the names to the supported package manager.
 Use the current `srv` command installed at `~/.local/bin/srv`. The obsolete
 `bin/srv` from the previous dotfiles layout is not part of this repository.
 Older standalone scripts are archived under `scripts/legacy/`.
+
+## Fleet logging
+
+Use `./install.sh --only server/alloy` on each VPS. Use `server/loki-caddy` on the HTTPS gateway and `server/grafana-loki` only on the central storage/dashboard host. See [the logging guide](configs/server/logging/README.md) for your named VPS inventory, credentials, prompts, IP allowlisting, and installation steps.
