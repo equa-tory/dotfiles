@@ -1,0 +1,23 @@
+- name: Run a discovered fleet shell job
+  hosts: fleet
+  gather_facts: false
+  serial: "{{ fleet_job_serial }}"
+  any_errors_fatal: true
+  become: "{{ fleet_job_sudo }}"
+  tasks:
+    - name: Explain preview behavior for shell scripts
+      ansible.builtin.debug:
+        msg: "Shell job {{ fleet_job_name }} is skipped in check mode; scripts cannot predict changes."
+      when: ansible_check_mode
+    - name: Execute job script
+      ansible.builtin.script:
+        cmd: "{{ fleet_job_script | quote }}"
+        executable: /bin/bash
+      environment: "{{ fleet_job_environment | combine({'FLEET_HOST': inventory_hostname}) }}"
+      register: job_result
+      changed_when: fleet_job_changes
+      when: not ansible_check_mode
+    - name: Show script output
+      ansible.builtin.debug:
+        var: job_result.stdout_lines
+      when: not ansible_check_mode

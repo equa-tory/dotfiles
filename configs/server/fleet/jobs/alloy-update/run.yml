@@ -1,3 +1,5 @@
+# description: Update native Alloy from each VPS configured APT repository
+# options: version=fleet_alloy_version
 - name: Update native Alloy one server at a time
   hosts: fleet
   gather_facts: true
@@ -9,6 +11,15 @@
       ansible.builtin.assert:
         that: ansible_facts.os_family == 'Debian'
         fail_msg: This update action supports Debian/Ubuntu native Alloy packages only.
+    - name: Show the configured Alloy package source and candidate version
+      ansible.builtin.command:
+        argv: [apt-cache, policy, alloy]
+      register: alloy_package_source
+      changed_when: false
+      check_mode: false
+    - name: Display where this server obtains Alloy
+      ansible.builtin.debug:
+        var: alloy_package_source.stdout_lines
     - name: Read installed packages
       ansible.builtin.package_facts:
         manager: auto

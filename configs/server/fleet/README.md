@@ -1,88 +1,143 @@
-# fleet: one command for the VPS machines
+# Fleet: edit one server list, then sync
 
-The controller is `equa@192.168.1.50`. It uses SSH and Ansible to execute trusted tasks. No management API, web listener, or remote daemon is installed on the VPS machines. FRP, VPN containers, and Grafana are not changed by this module.
+The controller is installed in `~/fleet` on `192.168.1.50`. This directory contains the command, settings, Ansible dependencies, and tasks. It does not need to remain linked to the dotfiles repo. `~/.local/bin/fleet` is a convenience link to the installed command.
 
-## Start on the controller
+## Add or change a server
 
-The command and dependencies are installed under `~/.local/bin/fleet` and `~/.local/share/equa-fleet`. The initial inventory contains your five VPS names/IPs and provisionally uses the Linux login `equa`.
+Edit `~/fleet/servers.txt`:
 
-```bash
-fleet list
-fleet enroll all
+```text
+# Plain user@ip works:
+root@203.0.113.10
+
+# An optional name gives friendlier task output:
+my-server user@server.example.com
+
+# Optional SSH port and private key path:
+other user@server.example.org:2222 key=/home/me/.ssh/another_key
+
+# IPv6:
+v6 root@[2001:db8::10]:2222
 ```
 
-`enroll` prompts for the actual Linux SSH user of each machine (`root`, `equa`, etc.), verifies its SSH host fingerprint through the normal SSH prompt, and adds this controller's **public** SSH key using `ssh-copy-id`. Enter the VPS's existing login password if needed. Private keys stay on the controller; login passwords are not saved. Check the host fingerprint against a trusted source such as the VPS console before accepting a new host.
-
-The default controller key is `~/.ssh/id_ed25519`. To use a different one, run `fleet configure`. If the chosen key does not exist, create it first with `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_fleet` and select that path. Use ssh-agent for a passphrase-protected key. Do not copy private keys into dotfiles or onto the VPS machines.
-
-You can enroll one machine at a time: `fleet enroll hip-fin`. Once each target accepts the controller key and its host key is trusted, normal fleet commands need no per-host login interaction. Changed or unknown host keys fail closed during bulk commands.
-
-## Everyday commands
+Then run in that directory:
 
 ```bash
-fleet status                         # connectivity and Alloy status/version
-fleet keys --plan                    # show selected hosts, no connections
-fleet keys --check                   # preview key changes
-fleet keys                           # fetch public keys from equa-tory.keys and merge everywhere
-fleet alloy-update --limit hip-fin --check -K
-fleet alloy-update --limit hip-fin -K # update just Finland first
-fleet alloy-update -K                 # update Alloy throughout the fleet, one server at a time
+./fleet sync
 ```
 
-`-K` asks for the sudo password when needed; it is not saved. Root logins or passwordless sudo do not need `-K`. A single invocation uses one sudo password, so use `--limit` to separate machines with different sudo passwords. This does not grant passwordless sudo or weaken SSH policy.
+That one command reads the latest file, checks SSH access, enrolls the controller's public key on hosts that need it, and merges the public keys from `https://github.com/equa-tory.keys`. Already accessible hosts skip enrollment/password prompts. New hosts may ask you to verify their SSH fingerprint and enter their existing login password once. The user comes from `servers.txt`; there is no separate per-server configuration questionnaire.
 
-From Torii, you can use the controller directly:
+No SSH tool can enroll an entirely inaccessible server without an initial working credential or provider-console provisioning. This tool handles the SSH prompts interactively; it does not store passwords or disable host-key checks. Your controller private key stays on the controller. If no controller key exists, interactive sync runs ssh-keygen to create one. Use ssh-agent for a passphrase-protected key.
+
+## Typical workflow
 
 ```bash
-ssh -t equa@192.168.1.50 '~/.local/bin/fleet keys'
-ssh -t equa@192.168.1.50 '~/.local/bin/fleet alloy-update -K'
+cd ~/fleet
+nano servers.txt
+./fleet sync --plan      # show targets, no SSH connections or changes
+./fleet sync             # enroll where needed, then merge GitHub public keys
+./fleet status
+./fleet alloy-update --limit my-server --check -K
+./fleet alloy-update -K
 ```
 
-### SSH-key synchronization
+`fleet sync my-server` selects one name; comma-separated names and shell-quoted globs also work. `fleet sync --enroll-only` just enrolls the controller key. The older `fleet enroll` command is an alias for enrollment only and now defaults to all servers.
 
-The HTTPS source is `https://github.com/equa-tory.keys`. The controller downloads it once, validates every public key using `ssh-keygen`, then merges keys into each target's login account. Invalid/empty downloads fail before applying anything. Existing unrelated keys are retained. Removing a key from GitHub does not automatically revoke copies already installed; revocation is a separate deliberate operation.
+Every command rereads `servers.txt`. Changing a user or IP takes effect immediately; adding/removing lines changes which hosts receive future tasks. The private Ansible inventory under `.state/` is generated automatically, not a file you maintain. Removing a host line stops targeting it; it does not delete keys or uninstall software from that remote server.
 
-By default, keys are installed for each machine's `ansible_user`. `fleet keys --key-user equa -K` can target another existing Linux account and needs suitable privileges. An initial working SSH login is required: a machine cannot install new access keys for a controller that has no way to log in yet.
+All entries are validated before connecting. Duplicate names/servers and malformed addresses fail with a line number. Enrollment continues past an inaccessible host, reports the failures, and can be safely repeated. Only ready hosts receive key synchronization. Existing unrelated authorized keys are preserved.
 
-### Alloy updates
+The provided source URL is configurable in `settings.json`, alongside the default controller private-key path. These are defaults, not private-key contents or passwords. `fleet configure` can change these two defaults; server details belong in `servers.txt`.
 
-This task updates an already installed **native Debian/Ubuntu Alloy package**, preserving the existing config and password file. It validates config before updating, upgrades only Alloy using the target's existing APT repositories, suppresses package-triggered service restarts, validates again, and restarts Alloy if the package changed. It checks the loopback Alloy readiness endpoint. It stops the rollout on failure; it does not automatically downgrade a newly installed package after an error. This is not a configuration deployment or a whole-OS update. Docker Alloy and Amnezia containers are left alone.
+## Jobs are directories and files
 
-Optional: `fleet alloy-update --version '<exact APT version>' -K` selects a specific available package version; automatic downgrades are not enabled.
+```text
+jobs/
+  ssh-keys/
+    run.py          # fetch/validate keys on the controller
+    tasks.yml       # merge them on the VPS machines
+  alloy-update/
+    run.yml         # package-update tasks; shows APT source first
+  status/
+    run.yml
+  uptime/
+    run.sh          # example plain shell job
+```
 
-## Settings and future tasks
-
-Private controller settings are outside Git:
-
-- `~/.config/equa-fleet/inventory.json`: target IPs, users, SSH ports, and private-key **paths**, not key contents.
-- `~/.config/equa-fleet/settings.json`: public key source URL.
-
-Use `fleet configure` to change logins/ports/key paths/source, or edit the inventory to add another host. The dotfiles logging fleet file seeds a fresh inventory only; later edits do not overwrite existing controller settings. No passwords belong in the inventory.
-
-Add a trusted Ansible playbook at `~/.config/equa-fleet/playbooks/<task>.yml` (or commit a reusable one under this module's `playbooks`). Target the `fleet` inventory group and run:
+The CLI discovers these directories each time. There is no command registry to edit.
 
 ```bash
-fleet run <task> --limit hip-fin --check
-fleet run <task> --limit hip-fin -K
+./fleet jobs
+./fleet run uptime --limit hip-fin
+./fleet run ssh-keys --check
+./fleet run alloy-update --limit hip-fin --check -K
 ```
 
-These tasks are the reusable backend for a future dashboard. Grafana still displays logs; CPU/RAM/disk graphs would need a metrics backend added separately. No dashboard or API has been deployed as part of this controller.
+Short commands such as `fleet status`, `fleet keys` (an alias for ssh-keys), and `fleet alloy-update` still work, but they are generated from the job directories, not built into the runner. `fleet sync` runs jobs marked `# on-sync: true` after enrollment; by default that is only ssh-keys.
 
-## Install on another controller
+### Add a shell job
+
+Create `jobs/my-job/run.sh`:
+
+```bash
+#!/usr/bin/env bash
+# description: Show disk space
+# changes: false
+# sudo: false
+# serial: 1
+set -euo pipefail
+printf '%s\n' "$FLEET_HOST"
+df -h /
+```
+
+Then run `./fleet run my-job --limit hip-fin`. No Python change, rebuild, install step, or JSON manifest is needed. You can copy the starter at `templates/job/run.sh`. Nested directories work too, e.g. `jobs/maintenance/disks/run.sh` -> `fleet run maintenance/disks`.
+
+Shell jobs run **on each selected VPS**, with Bash. `# sudo: true` requests remote privilege escalation; use `-K` if sudo needs a password. `# serial: 1` is the safe default and stops the job on failure. `# changes: false` marks a read-only script. `FLEET_HOST`, `FLEET_JOB_NAME`, and `FLEET_VARS_JSON` are available in the remote environment. Extra values supplied using `--set name=value` are available in that JSON; the script decides how to use them. Each script is copied by Ansible and run remotely; arbitrary companion files are not uploaded automatically. Use a YAML job when it needs files/templates or richer configuration.
+
+### Other job types and metadata
+
+- `run.yml`: an Ansible playbook targeting the `fleet` group. Supports files, packages, templates, handlers, and native check mode.
+- `run.py`: a controller-side Python job. It receives a private context-file path in `FLEET_JOB_CONTEXT`, plus `FLEET_HOME` and `FLEET_JOB_DIR`. The bundled ssh-keys job demonstrates calling the common Ansible runner. `# runner: controller` can also make a Bash entry run locally.
+
+Exactly one entry (`run.sh`, `run.yml`, or `run.py`) belongs in a job directory. Header comments provide optional `description`, `aliases`, `options`, `sudo`, `serial`, `changes`, `on-sync`, and `check` metadata. See the bundled jobs for examples. `# options: version=fleet_alloy_version` adds a job-specific `--version` option to its shorthand command. `fleet run <name>` supports generic `--set variable=value` for all jobs; e.g. `--set fleet_alloy_version=1.21.3-1` for an exact available APT package version. Options and names are discovered automatically.
+
+`--plan` lists targets and never executes shell/controller entry scripts. `--check` previews Ansible jobs, skips remote shell scripts, and skips controller scripts unless they explicitly declare `# check: true`; such a controller job must honor check mode. A shell script cannot safely predict what it would change. Use a real YAML job for a useful dry run of updates/config changes.
+
+Existing `playbooks/<name>.yml` custom jobs remain runnable as legacy jobs; new directories take precedence. Move custom work into `jobs/<name>/run.yml` when convenient.
+
+### Where Alloy updates come from
+
+`jobs/alloy-update/run.yml` upgrades the existing **native Debian/Ubuntu package** through that VPS's configured APT sources. Your installed Grafana source is `https://apt.grafana.com stable main`. The job now prints `apt-cache policy alloy` first, showing the source and candidate version. It does not download Alloy from dotfiles or an unexplained URL.
+
+The job validates config, preserves config/password files, upgrades Alloy, validates again, restarts if changed, and checks readiness. It runs one server at a time and stops on failure. It does not change Amnezia containers, Docker Alloy, or the whole OS. Package downgrade rollback is not automatic. You can inspect or edit the job like any other file.
+
+### SSH keys and privileged jobs
+
+`jobs/ssh-keys/run.py` reads the HTTPS key source from `settings.json`, currently `https://github.com/equa-tory.keys`. It validates downloaded public keys with ssh-keygen before applying them through `tasks.yml`. It adds keys without deleting unrelated ones; removing a key from GitHub does not automatically revoke existing access. The optional `--key-user` on the `keys`/`ssh-keys` shorthand or `--set fleet_key_user=equa` can select another existing account with suitable privileges.
+
+The target Linux account is the user on each servers.txt line. `-K` prompts for sudo when needed; root or passwordless-sudo logins do not need it. One invocation uses one sudo password, so use `--limit` for hosts with different sudo passwords. Passwords are not saved.
+
+These tasks can be reused by a future dashboard. No public API or dashboard is installed; CPU/RAM/disk graphs would need a metrics backend separately. New entries in servers.txt manage SSH targets; they do not automatically create Loki credentials, expand the Caddy allowlist, or install Alloy.
+
+## Install or reinstall
+
+Select **server → fleet** in dotfiles, or:
 
 ```bash
 ./install.sh --only server/fleet
 ```
 
-The installer creates a user-owned Python virtual environment for Ansible and installs its SSH-key collection. It prompts for the initial SSH user and key path, preserves existing inventory, and links the `fleet` command. Requires Python 3 with venv/pip, OpenSSH tools (`ssh`, `ssh-copy-id`, `ssh-keygen`), and network access for initial dependencies. There is no root daemon or API port. Only the controller needs Ansible; targets need SSH/Python, plus sudo for privileged tasks.
-
-Checks:
+The installer prompts for a dedicated runtime directory (default `~/fleet`). For a scripted install:
 
 ```bash
-python3 -m unittest discover -s configs/server/fleet/tests -v
-python3 configs/server/fleet/tests/integration_keys.py
+FLEET_HOME="$HOME/fleet" bash configs/server/fleet/install.sh
 ```
 
-The integration test changes only a temporary file, checking that preview is read-only, existing keys survive, and repeated synchronization is idempotent. Production key synchronization and Alloy updates are not automatically run by the installer.
+It copies the application and tasks into that directory and installs user-owned Ansible dependencies there. Existing `servers.txt`, `settings.json`, and job files are preserved on reinstall; new bundled jobs are added and prior application files are backed up under `backups/`. To intentionally replace bundled job files with dotfiles versions, set `FLEET_REPLACE_JOBS=1` during installation; backups are still made and unrelated custom jobs are retained. A first install migrates the previous `~/.config/equa-fleet/inventory.json` if present, keeping each login, address, port, and key path. Otherwise it creates an empty commented server list. Legacy settings/dependencies are left intact so migration is reversible.
 
-References: [Ansible SSH connections](https://docs.ansible.com/projects/ansible/latest/inventory_guide/connection_details.html), [authorized_key](https://docs.ansible.com/projects/ansible/latest/collections/ansible/posix/authorized_key_module.html), [APT package updates](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html).
+Keep this directory outside Git: it holds runtime state and host details. The installation marker `.fleet-installation` lets the command locate its bundled dependencies/settings. You can run `./fleet` from any working directory or use the `fleet` link from PATH. A copied Python virtual environment is not portable between machines; run the installer on a new controller and copy only the server list/settings as appropriate, keeping private keys secure.
+
+Requires Python with venv/pip, SSH tools (`ssh`, `ssh-copy-id`, `ssh-keygen`), and initial network access for dependencies. Only the controller needs Ansible; targets need SSH/Python and appropriate sudo access for privileged tasks. No VPS agent daemon or API port is added.
+
+Checks: `python3 -m unittest discover -s tests -v`; `python3 tests/integration_keys.py`. The integration test changes only a temporary file, verifying preview is read-only, existing keys survive, and repeated synchronization is idempotent.

@@ -59,7 +59,8 @@ Older standalone scripts are archived under `scripts/legacy/`.
 ## Fleet logging
 
 Use `./install.sh --only server/logging/alloy` on each VPS. Use `server/logging/loki-caddy` on the HTTPS gateway and `server/logging/grafana-loki` only on the central storage/dashboard host. See [the logging guide](configs/server/logging/README.md) for your named VPS inventory, credentials, prompts, IP allowlisting, and installation steps.
-
 ## Fleet management
 
-Use `./install.sh --only server/fleet` on the control machine to manage SSH keys and Alloy updates across the VPS fleet. The controller on 192.168.1.50 provides `fleet status`, `fleet keys`, and `fleet alloy-update`. See [the fleet guide](configs/server/fleet/README.md) for first-time enrollment, GitHub public keys, and future tasks.
+Install with `./install.sh --only server/fleet`; it prompts for a runtime directory (default `~/fleet`). Edit `~/fleet/servers.txt` with `[name] user@ip` lines, then run `~/fleet/fleet sync` to enroll SSH access and distribute GitHub public keys. All commands reread that file automatically. See [the fleet guide](configs/server/fleet/README.md).
+
+Jobs are discovered from directories under `~/fleet/jobs`; add a `run.sh` or `run.yml`, then use `fleet jobs` and `fleet run <name>`.

@@ -1,7 +1,7 @@
 """Run on a controller: verify merging in a temporary file, never in ~/.ssh."""
 import json,os,pathlib,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-STATE=pathlib.Path.home()/'.local/share/equa-fleet'
+STATE=ROOT if (ROOT/'.fleet-installation').exists() else pathlib.Path.home()/'.local/share/equa-fleet'
 env=dict(os.environ,ANSIBLE_CONFIG=str(ROOT/'ansible.cfg'),ANSIBLE_COLLECTIONS_PATH=str(STATE/'collections'))
 with tempfile.TemporaryDirectory(prefix='fleet-key-test-') as tmp:
  root=pathlib.Path(tmp)

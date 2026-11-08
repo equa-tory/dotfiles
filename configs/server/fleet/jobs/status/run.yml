@@ -1,3 +1,4 @@
+# description: Check SSH access and Alloy service/version
 - name: Check fleet access and Alloy
   hosts: fleet
   gather_facts: false
