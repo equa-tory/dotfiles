@@ -1,6 +1,6 @@
-import pathlib,sys,unittest
+import pathlib,sys,unittest,tempfile,json
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
-from agent import render as agent
+from agent import render as agent,load_credential
 from gateway import render as gateway
 from common import endpoint,validate_host,FLEET
 class ConfigTests(unittest.TestCase):
@@ -19,6 +19,16 @@ class ConfigTests(unittest.TestCase):
    with self.assertRaises(ValueError):validate_host(value)
   for value in ['http://example.com/loki/api/v1/push','https://u:p@example.com/loki/api/v1/push','https://example.com/loki/api/v1/query']:
    with self.assertRaises(ValueError):endpoint(value)
+ def test_private_credential_import(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   p=pathlib.Path(tmp)/'agent.json'
+   data=dict(host='other-vps',endpoint='https://logs.example.org/loki/api/v1/push',username='other-vps',password='private-test-secret')
+   p.write_text(json.dumps(data));p.chmod(0o600)
+   self.assertEqual(load_credential(p),data)
+   p.chmod(0o644)
+   with self.assertRaises(ValueError):load_credential(p)
+   p.chmod(0o600);p.write_text(json.dumps(dict(data,endpoint='http://logs.example.org/loki/api/v1/push')))
+   with self.assertRaises(ValueError):load_credential(p)
  def test_gateway_requires_ip_and_password(self):
   hashed='$2a$14$'+'a'*53
   s=gateway('logs.example.com:3443','127.0.0.1:3100',list(FLEET['machines'].values()),{'hip-fin':hashed})

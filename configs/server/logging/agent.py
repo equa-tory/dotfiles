@@ -23,6 +23,17 @@ def probe(url,user,password,host):
  except urllib.error.HTTPError as e:raise RuntimeError(f'Loki returned HTTP {e.code}; check credentials and the Caddy IP allowlist.') from None
  except urllib.error.URLError as e:raise RuntimeError('Cannot reach Loki over verified HTTPS: '+str(e.reason)) from None
 
+def load_credential(path):
+ p=pathlib.Path(path).expanduser()
+ if not p.is_file():raise ValueError('Credential JSON file does not exist.')
+ if p.stat().st_mode & 0o077:raise ValueError('Credential file must be private: chmod 600 '+str(p))
+ data=json.loads(p.read_text())
+ for key in ('host','endpoint','username','password'):
+  if not isinstance(data.get(key),str) or not data[key]:raise ValueError('Credential file is missing '+key)
+ validate_host(data['host']);endpoint(data['endpoint'])
+ if not re.fullmatch(r'[A-Za-z0-9_.-]+',data['username']):raise ValueError('Invalid credential username')
+ return data
+
 def install_package():
  if shutil.which('alloy'):return
  if not shutil.which('apt-get'):raise RuntimeError('Automatic package installation supports Debian/Ubuntu. Install Alloy from Grafana first, then rerun this module.')
@@ -46,13 +57,25 @@ def install():
  for name,ip in FLEET['machines'].items():print(f'  {name:12} {ip}')
  existing=read_root('/etc/alloy/config.alloy') if exists_root('/etc/alloy/config.alloy') else ''
  match=re.search(r'host\s*=\s*"([^"]+)"',existing)
- host=validate_host(ask('Machine name',match.group(1) if match else socket.gethostname()))
- url=endpoint(ask('Loki push URL',FLEET['endpoint']))
- user=ask('Agent username',host)
+ suggested=match.group(1) if match else socket.gethostname()
+ suggested_file=pathlib.Path.home()/'.local/share/equa-logging/credentials'/(suggested+'.json')
+ filename=ask('Agent credential JSON file (blank enters settings manually)',str(suggested_file) if suggested_file.exists() else None)
+ credential=load_credential(filename) if filename else {}
+ host=validate_host(ask('Machine name',credential.get('host',suggested)))
+ existing_url=re.search(r'url\s*=\s*"(https://[^"]+)"',existing)
+ url=endpoint(ask('Loki push URL',credential.get('endpoint',existing_url.group(1) if existing_url else FLEET['endpoint'])))
+ existing_user=re.search(r'username\s*=\s*"([^"]+)"',existing)
+ user=ask('Agent username',credential.get('username',existing_user.group(1) if existing_user else host))
  if not re.fullmatch(r'[a-zA-Z0-9_.-]+',user):raise ValueError('Invalid agent username')
- password=ask('Agent password (blank keeps the installed password)',secret=True)
- if not password and exists_root('/etc/alloy/loki.password'):password=read_root('/etc/alloy/loki.password').rstrip('\n')
- if not password:raise ValueError('Provision a matching Caddy user first; a password is required.')
+ password=credential.get('password','')
+ if password:
+  print('Using the password from the private credential file; it will not be displayed.')
+ else:
+  installed=exists_root('/etc/alloy/loki.password')
+  label='Agent password (blank keeps /etc/alloy/loki.password)' if installed else 'Agent password from the gateway credential file (required on first install)'
+  password=ask(label,secret=True)
+  if not password and installed:password=read_root('/etc/alloy/loki.password').rstrip('\n')
+ if not password:raise ValueError('No agent password is installed. Run the Loki Caddy gateway module to generate credentials, then copy this machine’s JSON file or paste its password here. This is not the Grafana or SSH password.')
  docker=pathlib.Path('/var/run/docker.sock').exists() and yes('Collect Docker container logs?',True)
  monitor=docker and yes('Include noisy Grafana/Loki/Alloy container logs?',False)
  config=render(host,url,user,docker,monitor)

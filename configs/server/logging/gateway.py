@@ -17,7 +17,7 @@ def render(address,upstream,ips,users,auth_directive='basicauth'):
  for name,hashed in users.items():
   if not re.fullmatch(r'[A-Za-z0-9_.-]+',name) or not re.fullmatch(r'\$2[aby]\$\d\d\$[./A-Za-z0-9]+',hashed):raise ValueError('Invalid Caddy username or bcrypt hash')
  credentials='\n'.join('        '+name+' '+hashed for name,hashed in sorted(users.items()))
- return f'''# Managed by dotfiles server/loki-caddy. Passwords are stored separately.
+ return f'''# Managed by dotfiles server/logging/loki-caddy. Passwords are stored separately.
 {address} {{
   @push path /loki/api/v1/push
   handle @push {{
@@ -46,12 +46,16 @@ def install():
  config_path='/etc/equa-logging/gateway.json'
  state=json.loads(read_root(config_path)) if exists_root(config_path) else {'users':{}}
  users=state.get('users',{})
+ print('Grafana admin passwords and Alloy agent passwords are separate. This gateway generates passwords only for new agent names; existing passwords are kept.')
+ names=ask('Agent names to provision (space-separated)', ' '.join(state.get('agents',FLEET['machines'].keys()))).split()
+ if not names or len(set(names))!=len(names):raise ValueError('Enter one or more unique agent names.')
+ for name in names:validate_host(name)
  directory=pathlib.Path(ask('Private directory for generated agent credentials',str(pathlib.Path.home()/'.local/share/equa-logging/credentials'))).expanduser().resolve()
  if directory.is_relative_to(ROOT.parents[2]):raise ValueError('Store credentials outside the dotfiles repository.')
  directory.mkdir(parents=True,exist_ok=True);directory.chmod(0o700)
- for name in FLEET['machines']:
+ for name in names:
   if name in users:
-   print(name+': existing password retained');continue
+   print(name+': existing password retained (no new password generated)');continue
   password=secrets.token_urlsafe(36)
   hashed=run(['caddy','hash-password','--plaintext',password],capture_output=True).stdout.strip()
   users[name]=hashed
@@ -73,7 +77,7 @@ def install():
   write_root(mainfile,proposed,save=False)
   sudo(['caddy','validate','--config',mainfile])
   sudo(['systemctl','reload','caddy'])
-  write_root(config_path,json.dumps({'site':address,'upstream':upstream,'ips':ips,'users':users},indent=2),mode='0600',save=False)
+  write_root(config_path,json.dumps({'site':address,'upstream':upstream,'ips':ips,'agents':names,'users':users},indent=2),mode='0600',save=False)
  except Exception:
   for p,b in old.items():
    if b:sudo(['cp','-a',b,p])

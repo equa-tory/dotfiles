@@ -23,10 +23,10 @@ Copy/clone dotfiles to that VPS, then run as its normal sudo-capable user:
 
 ```bash
 cd ~/dotfiles
-./install.sh --only server/alloy
+./install.sh --only server/logging/alloy
 ```
 
-The module prompts for the machine label, endpoint, username/password, and Docker collection. Enter the matching label/username from the table. Password input is hidden. Automatic package installation uses the official Grafana APT repository on Debian/Ubuntu; on another systemd Linux distribution install Alloy yourself first and rerun the module.
+The module first asks for an optional private credential JSON file, then prompts for the machine label, endpoint, username/password, and Docker collection. Copying the JSON file means you do not have to paste its password. Set the copied file to mode 0600; it must not be committed to Git. Enter the matching label/username from the table. Password input is hidden. Automatic package installation uses the official Grafana APT repository on Debian/Ubuntu; on another systemd Linux distribution install Alloy yourself first and rerun the module.
 
 The five initial credentials are already provisioned. Read the appropriate file privately:
 
@@ -50,10 +50,10 @@ Journal and selected text-file logs are collected. Docker collection is optional
 ## Configure or change Caddy on hip-nid
 
 ```bash
-./install.sh --only server/loki-caddy
+./install.sh --only server/logging/loki-caddy
 ```
 
-Prompts cover the HTTPS site, existing loopback Loki upstream, source IPs, and the private directory for new credentials. It reads existing users from `/etc/equa-logging/gateway.json`, preserving their passwords. Missing fleet users receive separate generated passwords, saved outside Git. Caddy must already be installed. The module supports the older `basicauth` spelling used by your Caddy 2.6, and `basic_auth` on newer Caddy.
+Prompts cover the HTTPS site, existing loopback Loki upstream, source IPs, agent names, and the private directory for new credentials. For another person’s setup, enter their domain, IP addresses, and their own agent names; the shipped fleet is just your default inventory. It reads existing users from `/etc/equa-logging/gateway.json`, preserving their passwords. Missing fleet users receive separate generated passwords, saved outside Git. Caddy must already be installed. The module supports the older `basicauth` spelling used by your Caddy 2.6, and `basic_auth` on newer Caddy.
 
 Managed routing is in `/etc/caddy/equa-logging.caddy`, imported by `/etc/caddy/Caddyfile`. Other Caddy sites are preserved. Config is validated before Caddy reload; no FRP config or connection is modified. For a new domain, point DNS to this host and ensure Caddy can obtain its certificate. The existing endpoint already has HTTPS. With a public AAAA record, include the intended VPS IPv6 source addresses too, or clients using IPv6 will be denied.
 
@@ -61,12 +61,21 @@ To add another machine, add its name/IP to `fleet.json`, rerun the gateway modul
 
 The existing raw port 3100 is blocked for external IPv4/IPv6 traffic by `logging-backends-private.service`. Keep it enabled. The gateway module configures Caddy only; on a fresh host it does not create firewall rules or an FRP tunnel. Its upstream must already exist on loopback. Your current upstream is `127.0.0.1:3100` through the existing tunnel. Do not open raw Loki to the Internet.
 
+## Passwords and reinstalls
+
+- Grafana has its own admin password, stored in the central stack’s `.env`. Reinstalling Grafana in the same runtime directory keeps this secret and the existing database. It does not create or change Alloy passwords.
+- The Loki Caddy gateway creates a random password for each **new agent name**. Reinstalling the gateway with its existing `/etc/equa-logging/gateway.json` preserves the registered agent passwords. New names get new private credential JSON files.
+- Alloy imports that machine’s JSON file or asks you to paste its agent password on first installation. A blank password only keeps the password already installed on that same VPS at `/etc/alloy/loki.password`. Blank cannot generate a password that Caddy would accept.
+- When copying the code to someone else, do not copy your runtime `.env`, credential JSON files, gateway registry, or password files. Run their gateway module to generate independent credentials, then distribute one matching JSON file to each of their agents.
+
+The menu groups all three roles under **server → logging**. Installing only an agent does not install Grafana or Loki on that VPS.
+
 Expected responses: unlisted source -> 403; listed source without a valid password -> 401; valid POST -> 204; query/admin paths -> 404; GET to the push path from an allowed source -> 405.
 
 ## Central Grafana/Loki host only
 
 ```bash
-./install.sh --only server/grafana-loki
+./install.sh --only server/logging/grafana-loki
 ```
 
 This installs the central Docker Compose stack and both dashboards, with an optional local Alloy container. It prompts for the runtime directory, Grafana bind IP/port, Loki loopback port, admin password, retention days, local host label, and Docker collection. It requires Docker Engine plus Compose and permission to use Docker. It never installs Docker silently.

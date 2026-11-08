@@ -1,7 +1,7 @@
 from common import *
 from agent import render
 import secrets,socket
-TEMPLATES=ROOT.parent/'grafana-loki'
+TEMPLATES=ROOT/'grafana-loki'
 def install():
  if not shutil.which('docker'):raise RuntimeError('Install Docker Engine and the Compose plugin first.')
  run(['docker','compose','version'],stdout=subprocess.DEVNULL)
