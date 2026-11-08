@@ -18,3 +18,4 @@ The Alloy module installs named VPS log collectors. The loki-caddy module config
 See `docs/security-check.md` for post-install manual checks.
 The `srv` module installs the current modular server helper to
 `~/.local/bin/srv`; its source and modules are in `configs/server/srv/`.
+The optional `server/hostname` module prompts for the complete hostname, updates local name resolution with backups, and offers cloud-init persistence. It does not restart network or SSH services. See [hostname/README.md](hostname/README.md).
