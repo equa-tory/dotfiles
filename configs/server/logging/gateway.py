@@ -8,7 +8,7 @@ def site(value):
  if ':' in value:port(value.rsplit(':',1)[1])
  return value
 
-def render(address,upstream,ips,users,auth_directive='basicauth'):
+def render(address,upstream,ips,users,auth_directive='basicauth',metrics_upstream='127.0.0.1:19090'):
  site(address)
  u=urllib.parse.urlsplit('http://'+upstream)
  if u.hostname not in ('localhost','127.0.0.1','::1') or u.path or not u.port:raise ValueError('Loki upstream must be a loopback host:port.')
@@ -17,7 +17,7 @@ def render(address,upstream,ips,users,auth_directive='basicauth'):
  for name,hashed in users.items():
   if not re.fullmatch(r'[A-Za-z0-9_.-]+',name) or not re.fullmatch(r'\$2[aby]\$\d\d\$[./A-Za-z0-9]+',hashed):raise ValueError('Invalid Caddy username or bcrypt hash')
  credentials='\n'.join('        '+name+' '+hashed for name,hashed in sorted(users.items()))
- return f'''# Managed by dotfiles server/logging/loki-caddy. Passwords are stored separately.
+ result=f'''# Managed by dotfiles server/logging/loki-caddy. Passwords are stored separately.
 {address} {{
   @push path /loki/api/v1/push
   handle @push {{
@@ -38,11 +38,22 @@ def render(address,upstream,ips,users,auth_directive='basicauth'):
 }}
 '''
 
+ if metrics_upstream:
+  parsed=urllib.parse.urlsplit('http://'+metrics_upstream)
+  if parsed.hostname not in ('localhost','127.0.0.1','::1') or not parsed.port or parsed.path:raise ValueError('Metrics upstream must be loopback host:port')
+  a=result.index('  @push path');b=result.index('  handle {',a)
+  block=result[a:b].replace('@push','@metrics').replace('/loki/api/v1/push','/api/v1/write').replace('reverse_proxy '+upstream,'reverse_proxy '+metrics_upstream)
+  result=result[:b]+block+result[b:]
+ return result
+
 def install():
  if not shutil.which('caddy'):raise RuntimeError('Install Caddy first. This module preserves the existing Caddy sites.')
- address=site(ask('Loki HTTPS site','equatory.ddns.net:3443'))
- upstream=ask('Existing local Loki backend','127.0.0.1:3100')
- ips=ask('Allowed VPS source IPs (space-separated)',' '.join(FLEET['machines'].values())).split()
+ config_path='/etc/equa-logging/gateway.json'
+ state=json.loads(read_root(config_path)) if exists_root(config_path) else {'users':{}}
+ address=site(ask('Loki HTTPS site',state.get('site','equatory.ddns.net:3443')))
+ upstream=ask('Existing local Loki backend',state.get('upstream','127.0.0.1:3100'))
+ metrics_upstream=ask('Existing private metrics reverse tunnel',state.get('metrics_upstream','127.0.0.1:19090'))
+ ips=ask('Allowed VPS source IPs (space-separated)',' '.join(state.get('ips',FLEET['machines'].values()))).split()
  config_path='/etc/equa-logging/gateway.json'
  state=json.loads(read_root(config_path)) if exists_root(config_path) else {'users':{}}
  users=state.get('users',{})
@@ -65,7 +76,7 @@ def install():
  version=run(['caddy','version'],capture_output=True).stdout
  match=re.search(r'v?(\d+)\.(\d+)',version)
  auth='basic_auth' if match and tuple(map(int,match.groups()))>=(2,8) else 'basicauth'
- generated=render(address,upstream,ips,users,auth)
+ generated=render(address,upstream,ips,users,auth,metrics_upstream)
  mainfile='/etc/caddy/Caddyfile';include='/etc/caddy/equa-logging.caddy'
  current=read_root(mainfile)
  if re.search(r'^\s*'+re.escape(address)+r'\s*\{',current,re.M):raise RuntimeError('This site already exists directly in the Caddyfile. Move it to the managed include before running this installer; other sites will not be overwritten.')
@@ -77,12 +88,15 @@ def install():
   write_root(mainfile,proposed,save=False)
   sudo(['caddy','validate','--config',mainfile])
   sudo(['systemctl','reload','caddy'])
-  write_root(config_path,json.dumps({'site':address,'upstream':upstream,'ips':ips,'agents':names,'users':users},indent=2),mode='0600',save=False)
+  write_root(config_path,json.dumps({'site':address,'upstream':upstream,'metrics_upstream':metrics_upstream,'ips':ips,'agents':names,'users':users},indent=2),mode='0600',save=False)
  except Exception:
   for p,b in old.items():
    if b:sudo(['cp','-a',b,p])
    else:sudo(['rm','-f',p])
   raise
+ if yes('Provision the dedicated metrics forwarding-only SSH account?',exists_root('/etc/equa-logging/metrics-forwarding.json')):
+  from tunnel import install_gateway
+  install_gateway()
  print('Caddy gateway configured. Allow inbound TCP '+str(urllib.parse.urlsplit('https://'+address).port or 443)+' in your existing firewall if needed.')
  print('Agent credentials: '+str(directory)+' (private files; not committed). No FRP settings were changed.')
  print('Only allowlisted IPs WITH a valid password can POST logs. Query and admin paths return 404.')

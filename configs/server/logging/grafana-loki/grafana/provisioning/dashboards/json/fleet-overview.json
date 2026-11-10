@@ -1,0 +1,1487 @@
+{
+  "uid": "fleet-overview",
+  "title": "Fleet Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "fleet"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "custom",
+        "query": "dorm,hip-japan,hip-usa,hip-fin,hip-nid,nuxt-fin",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/fleet-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Usage",
+      "url": "/d/fleet-usage",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Problems",
+      "url": "/d/fleet-problems",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Services",
+      "url": "/d/fleet-services",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "All logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "alertlist",
+      "title": "Active alerts",
+      "options": {
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 100,
+        "sortOrder": 1,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      }
+    },
+    {
+      "type": "row",
+      "title": "dorm",
+      "collapsed": false,
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "dorm \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"dorm\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"dorm\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"dorm\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "dorm \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"dorm\"} > time()-300)) or on(host) (fleet_expected_host{host=\"dorm\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 4,
+      "gridPos": {
+        "x": 4,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "dorm \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"dorm\"} > time()-300)) or on(host) (fleet_expected_host{host=\"dorm\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 5,
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "dorm \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"dorm\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"dorm\"} > time()-300)) or on(host) (fleet_expected_host{host=\"dorm\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "dorm \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"dorm\"} > time()-300)) or on(host) (fleet_expected_host{host=\"dorm\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 7,
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "dorm \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"dorm\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "id": 8
+    },
+    {
+      "type": "row",
+      "title": "hip-japan",
+      "collapsed": false,
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "hip-japan \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"hip-japan\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"hip-japan\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"hip-japan\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-japan \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"hip-japan\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-japan\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 11,
+      "gridPos": {
+        "x": 4,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-japan \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"hip-japan\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-japan\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 12,
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-japan \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"hip-japan\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"hip-japan\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-japan\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 13,
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-japan \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"hip-japan\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-japan\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 14,
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "hip-japan \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"hip-japan\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 12,
+        "w": 4,
+        "h": 5
+      },
+      "id": 15
+    },
+    {
+      "type": "row",
+      "title": "hip-usa",
+      "collapsed": false,
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "hip-usa \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"hip-usa\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"hip-usa\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"hip-usa\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 17,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-usa \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"hip-usa\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-usa\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 18,
+      "gridPos": {
+        "x": 4,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-usa \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"hip-usa\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-usa\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 19,
+      "gridPos": {
+        "x": 8,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-usa \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"hip-usa\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"hip-usa\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-usa\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 20,
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-usa \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"hip-usa\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-usa\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 21,
+      "gridPos": {
+        "x": 16,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "hip-usa \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"hip-usa\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 18,
+        "w": 4,
+        "h": 5
+      },
+      "id": 22
+    },
+    {
+      "type": "row",
+      "title": "hip-fin",
+      "collapsed": false,
+      "id": 23,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "hip-fin \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"hip-fin\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"hip-fin\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"hip-fin\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 24,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-fin \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"hip-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 25,
+      "gridPos": {
+        "x": 4,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-fin \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"hip-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 26,
+      "gridPos": {
+        "x": 8,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-fin \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"hip-fin\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"hip-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 27,
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-fin \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"hip-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 28,
+      "gridPos": {
+        "x": 16,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "hip-fin \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"hip-fin\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 24,
+        "w": 4,
+        "h": 5
+      },
+      "id": 29
+    },
+    {
+      "type": "row",
+      "title": "hip-nid",
+      "collapsed": false,
+      "id": 30,
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "hip-nid \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"hip-nid\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"hip-nid\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"hip-nid\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 31,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-nid \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"hip-nid\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-nid\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 32,
+      "gridPos": {
+        "x": 4,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-nid \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"hip-nid\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-nid\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 33,
+      "gridPos": {
+        "x": 8,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-nid \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"hip-nid\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"hip-nid\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-nid\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 34,
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "hip-nid \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"hip-nid\"} > time()-300)) or on(host) (fleet_expected_host{host=\"hip-nid\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 35,
+      "gridPos": {
+        "x": 16,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "hip-nid \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"hip-nid\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 30,
+        "w": 4,
+        "h": 5
+      },
+      "id": 36
+    },
+    {
+      "type": "row",
+      "title": "nuxt-fin",
+      "collapsed": false,
+      "id": 37,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "nuxt-fin \u00b7 Collection health",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by(host)(timestamp(node_time_seconds{host=\"nuxt-fin\"}) > bool time()-300)) or on(host) (fleet_expected_host{host=\"nuxt-fin\"} * (0/0))",
+          "legendFormat": "Metrics",
+          "range": false,
+          "queryType": "range",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "__LOKI_UID__"
+          },
+          "expr": "sum(count_over_time({host=\"nuxt-fin\",source=\"journal\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])) > bool 0 or vector(0)",
+          "queryType": "instant",
+          "legendFormat": "Logs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Fresh",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 38,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "nuxt-fin \u00b7 CPU",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) (node_time_seconds{host=\"nuxt-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"nuxt-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 39,
+      "gridPos": {
+        "x": 4,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "nuxt-fin \u00b7 RAM",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) (node_time_seconds{host=\"nuxt-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"nuxt-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 40,
+      "gridPos": {
+        "x": 8,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "nuxt-fin \u00b7 Disk used",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * (1 - node_filesystem_avail_bytes{host=\"nuxt-fin\"} / node_filesystem_size_bytes) and (node_filesystem_readonly == 0) and on(host) (node_time_seconds{host=\"nuxt-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"nuxt-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 41,
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "title": "nuxt-fin \u00b7 Outgoing",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) (node_time_seconds{host=\"nuxt-fin\"} > time()-300)) or on(host) (fleet_expected_host{host=\"nuxt-fin\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 42,
+      "gridPos": {
+        "x": 16,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "nuxt-fin \u00b7 Alerts",
+      "options": {
+        "alertInstanceLabelFilter": "{host=\"nuxt-fin\"}",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "error": true,
+          "noData": true
+        },
+        "maxItems": 20,
+        "viewMode": "list",
+        "groupMode": "default"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 36,
+        "w": 4,
+        "h": 5
+      },
+      "id": 43
+    }
+  ],
+  "annotations": {
+    "list": []
+  }
+}

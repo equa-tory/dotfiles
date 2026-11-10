@@ -1,0 +1,614 @@
+{
+  "uid": "fleet-usage",
+  "title": "Fleet Usage",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "fleet"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "custom",
+        "query": "dorm,hip-japan,hip-usa,hip-fin,hip-nid,nuxt-fin",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/fleet-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Usage",
+      "url": "/d/fleet-usage",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Problems",
+      "url": "/d/fleet-problems",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Services",
+      "url": "/d/fleet-services",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "All logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "title": "CPU utilization",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "RAM utilization",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Incoming traffic",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host) (rate(node_network_receive_bytes_total[5m])) * 8 / 1e6 and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Incoming packets/second",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host) (rate(node_network_receive_packets_total[1m])) and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "pps"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Incoming transferred in selected period",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host)(increase(node_network_receive_bytes_total{host=~\"$host\"}[$__range]))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Outgoing traffic",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "Mbits"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Outgoing packets/second",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host) (rate(node_network_transmit_packets_total[1m])) and on(host) node_time_seconds{host=~\"$host\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "pps"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Outgoing transferred in selected period",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host)(increase(node_network_transmit_bytes_total{host=~\"$host\"}[$__range]))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Filesystem available",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_avail_bytes{host=~\"$host\"} and node_filesystem_readonly{host=~\"$host\"} == 0",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Filesystem used",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(node_filesystem_size_bytes{host=~\"$host\"} - node_filesystem_avail_bytes) and node_filesystem_readonly{host=~\"$host\"} == 0",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "GPU utilization",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fleet_gpu_utilization_percent{host=~\"$host\"} and on(host) (fleet_gpu_collection_success == 1) and on(host) (fleet_gpu_collection_timestamp_seconds > time()-120)",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "VRAM used",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fleet_gpu_memory_used_bytes{host=~\"$host\"} and on(host) (fleet_gpu_collection_success == 1) and on(host) (fleet_gpu_collection_timestamp_seconds > time()-120)",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 12,
+      "gridPos": {
+        "x": 12,
+        "y": 88,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "VRAM total",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fleet_gpu_memory_total_bytes{host=~\"$host\"} and on(host) (fleet_gpu_collection_success == 1) and on(host) (fleet_gpu_collection_timestamp_seconds > time()-120)",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 13,
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "GPU temperature",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "fleet_gpu_temperature_celsius{host=~\"$host\"} and on(host) (fleet_gpu_collection_success == 1) and on(host) (fleet_gpu_collection_timestamp_seconds > time()-120)",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 14,
+      "gridPos": {
+        "x": 12,
+        "y": 104,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "GPU support and collection",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(fleet_gpu_collection_success{host=~\"$host\"} and on(host) (fleet_gpu_collection_timestamp_seconds > time()-120) and on(host) (max by(host)(timestamp(node_time_seconds)) > time()-300)) or on(host) (((fleet_expected_host{host=~\"$host\"} unless on(host) fleet_expected_gpu) * -1) and on(host) (max by(host)(timestamp(node_time_seconds)) > time()-300)) or on(host) (fleet_expected_host{host=~\"$host\"} * (0/0))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": false,
+          "queryType": "range",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "No supported GPU",
+                  "color": "gray"
+                },
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Available",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 112,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "text",
+      "title": "GPU availability",
+      "options": {
+        "mode": "markdown",
+        "content": "GPU panels display readings only on hosts with a working supported NVIDIA collector. Other machines: **No supported GPU**. Failed or stale collection shows Unavailable. Metrics history starts at deployment; disk forecasts require six hours of history."
+      },
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 120,
+        "w": 24,
+        "h": 8
+      }
+    }
+  ],
+  "annotations": {
+    "list": []
+  }
+}

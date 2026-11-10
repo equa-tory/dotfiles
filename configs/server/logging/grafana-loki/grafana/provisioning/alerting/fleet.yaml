@@ -1,0 +1,1008 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "fleet-monitoring",
+      "folder": "Fleet monitoring",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "fleet-high-cpu",
+          "title": "High CPU",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "prometheus",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "100 * (1 - avg by(host) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) > on(host) fleet_threshold_cpu_percent",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "15m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "High CPU on {{ $labels.host }}",
+            "description": "Five-minute CPU average above the machine threshold.",
+            "runbook_url": "/d/fleet-usage",
+            "__dashboardUid__": "fleet-usage"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-high-bandwidth",
+          "title": "High outgoing bandwidth",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "prometheus",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "sum by(host) (rate(node_network_transmit_bytes_total[5m])) * 8 / 1e6 > on(host) fleet_threshold_outgoing_mbps",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "15m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "High outgoing bandwidth on {{ $labels.host }}",
+            "description": "Suspicious outgoing traffic indicator; does not prove DDoS and does not block traffic.",
+            "runbook_url": "/d/fleet-usage",
+            "__dashboardUid__": "fleet-usage"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-high-packets",
+          "title": "High outgoing packet rate",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "prometheus",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "sum by(host) (rate(node_network_transmit_packets_total[1m])) > on(host) fleet_threshold_outgoing_pps",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "5m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "High outgoing packet rate on {{ $labels.host }}",
+            "description": "Suspicious outgoing packet rate; investigate workload and destinations.",
+            "runbook_url": "/d/fleet-usage",
+            "__dashboardUid__": "fleet-usage"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-disk-prediction",
+          "title": "Disk filling quickly",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "prometheus",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "(100 * (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes) > on(host) group_left() fleet_threshold_disk_used_percent) and (node_filesystem_readonly == 0) and (deriv(node_filesystem_avail_bytes[6h]) < 0) and (node_filesystem_avail_bytes / -deriv(node_filesystem_avail_bytes[6h]) < on(host) group_left() (fleet_threshold_disk_fill_hours * 3600)) and (count_over_time(node_filesystem_avail_bytes[6h]) >= 660) and (time() - min_over_time(timestamp(node_filesystem_avail_bytes)[6h:1m]) >= 21000)",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "15m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Disk filling quickly on {{ $labels.host }}",
+            "description": "Writable filesystem is over 70% used and forecast to fill within 24h, with nearly six hours of history.",
+            "runbook_url": "/d/fleet-usage",
+            "__dashboardUid__": "fleet-usage"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-ssh-login",
+          "title": "Successful SSH login",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "sum by(host) (count_over_time({source=\"journal\",service_name=~\"ssh.*\"} |~ \"Accepted (publickey|password) for \" [5m]))",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Successful SSH login on {{ $labels.host }}",
+            "description": "Successful SSH authentication during the last five minutes. Events are grouped by machine.",
+            "runbook_url": "/d/fleet-security",
+            "__dashboardUid__": "fleet-security"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-new-account",
+          "title": "New local account",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "sum by(host) (count_over_time({service_name=~\"fleet-accounts(.service)?\"} |= \"new_local_account \" [5m]))",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "New local account on {{ $labels.host }}",
+            "description": "Persistent watcher observed a new /etc/passwd username. See Security for individual events.",
+            "runbook_url": "/d/fleet-security",
+            "__dashboardUid__": "fleet-security"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-metrics-stopped",
+          "title": "Metrics stopped",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "prometheus",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "fleet_expected_host unless on(host) (max by(host) (timestamp(node_time_seconds)) > time() - 300)",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Metrics stopped on {{ $labels.host }}",
+            "description": "Expected machine has no fresh host measurement in five minutes.",
+            "runbook_url": "/d/fleet-usage",
+            "__dashboardUid__": "fleet-usage"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-dorm",
+          "title": "Logs stopped: dorm",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"dorm\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on dorm",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "dorm"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-hip-japan",
+          "title": "Logs stopped: hip-japan",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"hip-japan\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on hip-japan",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "hip-japan"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-hip-usa",
+          "title": "Logs stopped: hip-usa",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"hip-usa\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on hip-usa",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "hip-usa"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-hip-fin",
+          "title": "Logs stopped: hip-fin",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"hip-fin\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on hip-fin",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "hip-fin"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-hip-nid",
+          "title": "Logs stopped: hip-nid",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"hip-nid\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on hip-nid",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "hip-nid"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "fleet-heartbeat-nuxt-fin",
+          "title": "Logs stopped: nuxt-fin",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "queryType": "instant",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "datasourceUid": "__LOKI_UID__",
+              "model": {
+                "queryType": "instant",
+                "refId": "A",
+                "expr": "absent_over_time({host=\"nuxt-fin\",service_name=~\"fleet-heartbeat(.service)?\"} |= \"fleet_heartbeat\" [5m])",
+                "instant": true,
+                "range": false,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "refId": "C",
+                "type": "threshold",
+                "expression": "A",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "type": "gt",
+                      "params": [
+                        0
+                      ]
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "type": "last",
+                      "params": []
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "for": "0s",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "annotations": {
+            "__panelId__": "1",
+            "summary": "Logs stopped on nuxt-fin",
+            "description": "No journal heartbeat received from this expected host in five minutes.",
+            "runbook_url": "/d/fleet-logs",
+            "__dashboardUid__": "fleet-logs"
+          },
+          "labels": {
+            "service": "host",
+            "severity": "warning",
+            "host": "nuxt-fin"
+          },
+          "isPaused": false
+        }
+      ]
+    }
+  ],
+  "deleteRules": []
+}

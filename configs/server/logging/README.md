@@ -1,98 +1,80 @@
-# Fleet logs: install one collector per VPS
+# Fleet monitoring
 
-Alloy on each VPS -> Caddy HTTPS on hip-nid -> existing private Loki tunnel -> Loki/Grafana on dorm.
+Start at http://192.168.1.50:3003/d/fleet-overview in the deployed installation. Navigation is Overview · Usage · Problems · Services · Security · All logs. Machine and time selections travel with navigation links. The previous /d/fleet-logs and /d/fleet-security links and Loki datasource UID are retained.
 
-The public ingestion URL is `https://equatory.ddns.net:3443/loki/api/v1/push`.
-Caddy requires BOTH a listed source IP and a valid agent username/password. It accepts only POST to that exact path. Query/admin APIs return 404. Each VPS only needs Alloy, with outbound TCP 3443; do not install a separate Grafana/Loki stack or give it an FRP token.
+The expected hosts are dorm, hip-japan, hip-usa, hip-fin, hip-nid and nuxt-fin. Host metrics start at deployment; historical logs remain available. Disk forecasts need nearly six hours of regular samples. Grafana evaluates every minute and must be running to evaluate alerts. Its own complete outage cannot be reported by these rules. No external notification destination or SMTP service is configured.
 
-| Machine label | Source IPv4 |
-| --- | --- |
-| hip-japan | 45.66.166.180 |
-| hip-usa | 213.108.3.101 |
-| hip-fin | 193.32.179.127 |
-| hip-nid | 171.22.30.82 |
-| nuxt-fin | 31.76.226.149 |
+## Roles and installation
 
-The existing gateway VPS now emits new logs under `hip-nid`; older logs retain the historical `equatory` label until retention expires.
+Run the normal dotfiles menu, or select one role:
 
-The inventory and default endpoint live in `fleet.json`. These are the source IPs Caddy must actually see: if a VPS sends traffic through a VPN, NAT, IPv6, or another outbound proxy, add that real egress IP explicitly. X-Forwarded-For cannot bypass this allowlist. IP allowlisting supplements passwords; it does not replace them.
-
-## Add one VPS
-
-Copy/clone dotfiles to that VPS, then run as its normal sudo-capable user:
-
-```bash
-cd ~/dotfiles
+```sh
+./install.sh --only server/logging/grafana-loki
+./install.sh --only server/logging/loki-caddy
 ./install.sh --only server/logging/alloy
 ```
 
-The module first asks for an optional private credential JSON file, then prompts for the machine label, endpoint, username/password, and Docker collection. Copying the JSON file means you do not have to paste its password. Set the copied file to mode 0600; it must not be committed to Git. Enter the matching label/username from the table. Password input is hidden. Automatic package installation uses the official Grafana APT repository on Debian/Ubuntu; on another systemd Linux distribution install Alloy yourself first and rerun the module.
+The hub installs Grafana, Loki and private Prometheus, with optional local containerized Alloy. Prometheus retains up to 30 days or 10 GB, whichever is reached first; WAL/head data add some disk overhead. Its receiver and query API bind only to loopback. The central runtime directory must remain the same on reinstall to preserve Compose volumes and the Grafana database. The hub preserves the installed datasource UID and saves choices in hub.json and .env.
 
-The five initial credentials are already provisioned. Read the appropriate file privately:
+The gateway requires an existing Caddy installation and loopback Loki upstream. It preserves other sites, IP restrictions and registered passwords. Only POST /loki/api/v1/push and POST /api/v1/write are routed, with the same source-IP allowlist and Basic authentication. Query and admin paths return 404. IP allowlisting is supplementary authentication for trusted machines sharing one store. Allow inbound HTTPS on the configured port (3443 in this installation).
 
-- On dorm: `~/.local/share/equa-logging/credentials/hip-japan.json` (and the other names).
-- On hip-nid: `sudo cat /etc/equa-logging/credentials/hip-japan.json`.
+Metrics use a separate supervised SSH reverse tunnel. No FRP configuration, token or service is changed. Bootstrap its dedicated Ed25519 key on the home host, supply its PUBLIC key when the gateway installer offers the forwarding account, then enable the tunnel from the hub installer. The gateway account has no shell sessions, no password login, only remote TCP forwarding, and only the configured 127.0.0.1 listening port. Verify the gateway SSH host key in the tunnel user's known_hosts before starting. Private keys remain on the home host. The defaults are gateway loopback port 19090 and home Prometheus port 9090; usernames, SSH address/port and key path are prompted and saved outside Git.
 
-Do not commit or post these files. Give each VPS only its own credential. The installer verifies TLS, IP access, and authentication with a test log before changing Alloy. It installs a systemd service override with its HTTP UI bound to loopback and stores the password at `/etc/alloy/loki.password`, root:alloy 0640. Existing credentials can be retained by leaving password input blank. Backups live under `/var/backups/equa-logging` (root-only). Validation/start failures restore the agent's prior files.
+Agents need Alloy and systemd. Automatic package installation supports Debian/Ubuntu through Grafana's official repository; install Alloy yourself on other distributions. Agent credentials are separate from Grafana's admin password. Import a mode-0600 JSON credential or enter the agent's existing password. On reinstall, blank retains /etc/alloy/loki.password; existing Docker choices, host label, endpoint, interfaces and GPU setting are retained. New settings are prompted. Native Alloy's UI remains on loopback. Credentials and runtime state stay outside Git.
 
-After installation, emit a log and check the service:
+Agents collect host CPU, RAM, external NIC counters and persistent filesystems every 30 seconds using Alloy's embedded Unix exporter. The installer detects default-route interfaces and lets you override them; select physical external interfaces, not both bridges/tunnels and their underlying NICs. Deployed interfaces: ens224 on dorm and ens3 on all five VPS machines. Temporary and overlay filesystems are excluded; dashboards and disk alerts exclude read-only mounts. The local container mounts host /proc, /sys, root and the GPU textfile directory read-only.
 
-```bash
-logger -t alloy-check 'VPS log collection check'
-sudo systemctl status alloy --no-pager
+A one-minute journal heartbeat detects stopped logs independently of metrics. The account watcher records an initial username/UID baseline in /var/lib/fleet-monitoring/accounts.json and reports only subsequently added usernames and UIDs. It includes service accounts and labels them. It never reads password hashes. Optional NVIDIA collection runs nvidia-smi with a timeout, writes an atomic textfile, and replaces old GPU readings with failure health when collection fails. GPU dashboard queries also reject stale collection timestamps.
+
+## Configuration and operations
+
+Central runtime: /home/equa/logging in this installation. Expected hosts and per-host thresholds live in monitoring.json, outside generated dashboard JSON. Defaults: CPU 90%, outgoing 100 Mbps, outgoing packets 10,000/s, disk 70% used with a 24-hour fill forecast. Per-host keys are cpu_percent, outgoing_mbps, outgoing_pps, disk_used_percent and disk_fill_hours. The top-level gpu_hosts list records machines expected to have a GPU collector, so a stopped collector is shown as Unavailable rather than No supported GPU.
+
+After editing the runtime machine list/thresholds, regenerate and reload:
+
+```sh
+python3 configs/server/logging/monitoring.py \
+  --runtime /path/to/runtime \
+  --config /path/to/runtime/monitoring.json \
+  --loki-uid YOUR_EXISTING_LOKI_UID
+cd /path/to/runtime
+docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+docker kill --signal=HUP prometheus
+docker restart grafana
+```
+
+Adding a machine also requires an agent credential, gateway source-IP allowlist update and agent install. Removing a host removes its expected-host recording and provisions deletion of its heartbeat rule. Source fleet.json supplies new-install defaults; other users should replace its domain/IP/name inventory or enter their own settings.
+
+Native agent choices: /etc/alloy/fleet-monitoring.json. Gateway choices/hashes: /etc/equa-logging/gateway.json. Tunnel choices: /etc/equa-logging/metrics-forwarding.json on the gateway and metrics-tunnel.json on the hub. Protected credentials: ~/.local/share/equa-logging/credentials or /etc/equa-logging/credentials. Copy only a machine's own credential to that machine. Do not commit runtime .env, password files, registry files or private keys.
+
+Useful checks:
+
+```sh
+docker compose ps
+docker exec alloy alloy validate /etc/alloy/config.alloy
+systemctl status fleet-metrics-tunnel
+systemctl list-timers 'fleet-*'
 sudo journalctl -u alloy -n 30 --no-pager
 ```
 
-Open Grafana -> Fleet Logs -> Machine -> your chosen name. Dashboard time filters matter. The endpoint test log confirms transport; the logger event confirms actual journal collection.
+All logs uses a literal, case-sensitive Contains text filter. Presets separately supply error/exception/SSH/sudo/package patterns or journal/Docker source selectors. Clear filters retains machines and time. Problems text matching is a search aid, not a complete exception detector. Security separates accepted SSH authentication, failures, sudo, new accounts and Fail2ban. Login/account alerts group events by host over five minutes; continuous events can keep one alert active.
 
-Journal and selected text-file logs are collected. Docker collection is optional, and Grafana/Loki/Alloy containers are excluded by default to reduce noise. Application file collection follows current files from their end; journal catch-up is bounded to 24 hours. Docker socket access is privileged; enabling it adds Alloy to the docker group. Other groups are adm and systemd-journal. This is log collection, not CPU/RAM metrics.
+CPU and bandwidth require a five-minute average above threshold for 15 minutes; packet rate uses a one-minute average for five minutes. Disk prediction requires a persistent downward trend and almost six hours of history, then 15 minutes above the condition. Network alerts indicate suspicious traffic; they neither prove DDoS nor block anything. Missing logs and metrics are evaluated explicitly for each expected machine; backend query errors remain Grafana Error states.
 
-## Configure or change Caddy on hip-nid
+## Validation and rollback
 
-```bash
-./install.sh --only server/logging/loki-caddy
+```sh
+python3 -m unittest discover -s configs/server/logging/tests -v
+python3 configs/server/logging/tests/prometheus_fixtures.py /tmp/monitoring-fixtures
+docker run --rm --network none --entrypoint promtool \
+  -v /tmp/monitoring-fixtures:/fixtures:ro -w /fixtures \
+  prom/prometheus:v3.7.3 test rules tests.yml
 ```
 
-Prompts cover the HTTPS site, existing loopback Loki upstream, source IPs, agent names, and the private directory for new credentials. For another person’s setup, enter their domain, IP addresses, and their own agent names; the shipped fleet is just your default inventory. It reads existing users from `/etc/equa-logging/gateway.json`, preserving their passwords. Missing fleet users receive separate generated passwords, saved outside Git. Caddy must already be installed. The module supports the older `basicauth` spelling used by your Caddy 2.6, and `basic_auth` on newer Caddy.
+For a disposable Loki backend, run python3 configs/server/logging/tests/security_fixtures.py --loki-url http://127.0.0.1:13200. This writes clearly labeled synthetic streams and checks successful login/new-account expressions without creating real accounts.
 
-Managed routing is in `/etc/caddy/equa-logging.caddy`, imported by `/etc/caddy/Caddyfile`. Other Caddy sites are preserved. Config is validated before Caddy reload; no FRP config or connection is modified. For a new domain, point DNS to this host and ensure Caddy can obtain its certificate. The existing endpoint already has HTTPS. With a public AAAA record, include the intended VPS IPv6 source addresses too, or clients using IPv6 will be denied.
+Fixtures cover sustained CPU, byte and packet thresholds, counter resets, sufficient/insufficient and flat disk history, and a missing host while another stays healthy. Helper tests cover account baseline/service accounts, GPU failure replacement, navigation, literal-search rendering and repeated metrics configuration. The deployment additionally tests synthetic Loki login/account fixtures, a controlled heartbeat pause/firing/recovery, fresh six-host measurements and GPU readings, ingestion denials, and existing Caddy/FRP health.
 
-To add another machine, add its name/IP to `fleet.json`, rerun the gateway module on hip-nid, then run the agent module on the new VPS. To revoke a user, remove its hash from the `users` object in `/etc/equa-logging/gateway.json` AND remove/disable that machine in `fleet.json`, then rerun the module; otherwise the inventory would recreate that user. A username can be used from any allowlisted address; these are trusted agents sharing one Loki store, not isolated tenants.
+Hub backups live under the runtime backups directory; native/gateway backups under /var/backups/equa-logging (root-only). Restore backed-up config files, validate Alloy/Caddy/Compose/Prometheus, then restart/reload only the affected services. Do not remove or recreate the existing data volumes. Keep the pre-existing logging-backends-private.service enabled: it protects the legacy raw Loki tunnel independently of this metrics transport.
 
-The existing raw port 3100 is blocked for external IPv4/IPv6 traffic by `logging-backends-private.service`. Keep it enabled. The gateway module configures Caddy only; on a fresh host it does not create firewall rules or an FRP tunnel. Its upstream must already exist on loopback. Your current upstream is `127.0.0.1:3100` through the existing tunnel. Do not open raw Loki to the Internet.
-
-## Passwords and reinstalls
-
-- Grafana has its own admin password, stored in the central stack’s `.env`. Reinstalling Grafana in the same runtime directory keeps this secret and the existing database. It does not create or change Alloy passwords.
-- The Loki Caddy gateway creates a random password for each **new agent name**. Reinstalling the gateway with its existing `/etc/equa-logging/gateway.json` preserves the registered agent passwords. New names get new private credential JSON files.
-- Alloy imports that machine’s JSON file or asks you to paste its agent password on first installation. A blank password only keeps the password already installed on that same VPS at `/etc/alloy/loki.password`. Blank cannot generate a password that Caddy would accept.
-- When copying the code to someone else, do not copy your runtime `.env`, credential JSON files, gateway registry, or password files. Run their gateway module to generate independent credentials, then distribute one matching JSON file to each of their agents.
-
-The menu groups all three roles under **server → logging**. Installing only an agent does not install Grafana or Loki on that VPS.
-
-Expected responses: unlisted source -> 403; listed source without a valid password -> 401; valid POST -> 204; query/admin paths -> 404; GET to the push path from an allowed source -> 405.
-
-## Central Grafana/Loki host only
-
-```bash
-./install.sh --only server/logging/grafana-loki
-```
-
-This installs the central Docker Compose stack and both dashboards, with an optional local Alloy container. It prompts for the runtime directory, Grafana bind IP/port, Loki loopback port, admin password, retention days, local host label, and Docker collection. It requires Docker Engine plus Compose and permission to use Docker. It never installs Docker silently.
-
-Fresh defaults: Grafana on `127.0.0.1:3003`, Loki on `127.0.0.1:3200`, 30-day retention, anonymous login and signup disabled. Set Grafana's bind IP explicitly to its LAN address if you want LAN access. The optional local Alloy runs as root with journal/Docker socket mounts and a loopback UI. It skips its own observability containers by default.
-
-An existing stack must be updated in its existing directory so its Compose volumes are preserved. The installer refuses unrelated existing containers and conflicting ports, preserves an explicit datasource UID, and validates generated Alloy/Loki/Compose configs before updating files. If an old datasource has no UID in YAML, obtain its UID in Grafana and add that UID first. Runtime configs and admin passwords stay outside Git. UI edits to provisioned dashboards can be replaced when the templates are installed again.
-
-Your live home stack remains at `/home/equa/logging`; copying these modules into dotfiles does not reinstall it. Updating retention affects stored age, not a fixed disk quota. Dashboards show up to 1000 lines per query by default.
-
-## Checks and references
-
-Renderer tests: `python3 -m unittest discover -s configs/server/logging/tests -v`.
-Installers require interactive prompts and are not a noninteractive fleet deployment tool. No login details for the other four VPS machines are stored here; run the agent installer on them yourself.
-
-Official documentation:
-- https://grafana.com/docs/alloy/latest/set-up/install/linux/
-- https://grafana.com/docs/alloy/latest/reference/components/loki/loki.write/
-- https://grafana.com/docs/loki/latest/operations/authentication/
-- https://caddyserver.com/docs/caddyfile/matchers#remote-ip
+Official references: [Alloy Unix exporter](https://grafana.com/docs/alloy/latest/reference/components/prometheus/prometheus.exporter.unix/), [remote write](https://grafana.com/docs/alloy/latest/reference/components/prometheus/prometheus.remote_write/), [Grafana alert provisioning](https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/).

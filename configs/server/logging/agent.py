@@ -1,5 +1,6 @@
 from common import *
 import base64,socket,time,urllib.request,urllib.error
+import monitoring
 
 def render(host,url,user,docker=False,include_monitoring=False):
  s=(ROOT/'agent.alloy.template').read_text()
@@ -76,9 +77,18 @@ def install():
   password=ask(label,secret=True)
   if not password and installed:password=read_root('/etc/alloy/loki.password').rstrip('\n')
  if not password:raise ValueError('No agent password is installed. Run the Loki Caddy gateway module to generate credentials, then copy this machine’s JSON file or paste its password here. This is not the Grafana or SSH password.')
- docker=pathlib.Path('/var/run/docker.sock').exists() and yes('Collect Docker container logs?',True)
- monitor=docker and yes('Include noisy Grafana/Loki/Alloy container logs?',False)
- config=render(host,url,user,docker,monitor)
+ docker=pathlib.Path('/var/run/docker.sock').exists() and yes('Collect Docker container logs?',('discovery.docker' in existing) if existing else True)
+ monitor=docker and yes('Include noisy Grafana/Loki/Alloy container logs?',('action = "drop"' not in existing) if existing else False)
+ state_path='/etc/alloy/fleet-monitoring.json'
+ state=json.loads(read_root(state_path)) if exists_root(state_path) else {}
+ metrics_url=ask('Metrics remote-write URL',state.get('metrics_url',url.replace('/loki/api/v1/push','/api/v1/write')))
+ routes=json.loads(run(['ip','-j','route','show','default'],capture_output=True).stdout)
+ detected=list(dict.fromkeys(x['dev'] for x in routes if 'dev' in x))
+ interfaces=ask('External network interfaces (space-separated; regex supported)', ' '.join(state.get('interfaces',detected))).split()
+ if not interfaces:raise ValueError('Select at least one external interface.')
+ gpu=yes('Collect supported NVIDIA GPU metrics?',state.get('gpu',bool(shutil.which('nvidia-smi'))))
+ config=render(host,url,user,docker,monitor)+monitoring.metrics(host,metrics_url,user,interfaces)
+ settings={'host':host,'metrics_url':metrics_url,'interfaces':interfaces,'gpu':gpu}
  probe(url,user,password,host)
  print('HTTPS authentication and IP allowlist check passed.')
  install_package()
@@ -90,9 +100,13 @@ def install():
  try:
   write_root(paths[1],password,mode='0640',group='alloy',save=False)
   write_root(paths[0],config,mode='0640',group='alloy',save=False)
-  sudo(['runuser','-u','alloy','--',shutil.which('alloy'),'validate',paths[0]])
+  sudo(['runuser','-u','alloy','--',shutil.which('alloy'),'validate',paths[0]],cwd='/')
   write_root(paths[2],'[Service]\nExecStart=\nExecStart='+shutil.which('alloy')+' run --server.http.listen-addr=127.0.0.1:12345 --storage.path=/var/lib/alloy /etc/alloy/config.alloy\n',save=False)
+  with tempfile.TemporaryDirectory() as tmp:
+   for name in ['support.py','collector_helper.py']:shutil.copy2(ROOT/name,pathlib.Path(tmp)/name)
+   sudo(['python3','-B','-c','import sys;sys.path.insert(0,sys.argv[1]);import support;support.install_support(sys.argv[2]=="true")',tmp,str(gpu).lower()])
   sudo(['systemctl','daemon-reload']);sudo(['systemctl','enable','alloy']);sudo(['systemctl','restart','alloy'])
+  write_root(state_path,json.dumps(settings,indent=2))
   time.sleep(2);sudo(['systemctl','is-active','--quiet','alloy'])
  except Exception:
   for path,saved in old.items():

@@ -1,205 +1,279 @@
 {
   "uid": "fleet-security",
-  "title": "SSH and Security Logs",
-  "tags": [
-    "logs",
-    "fleet"
-  ],
+  "title": "Fleet Security",
   "schemaVersion": 39,
   "version": 1,
-  "editable": true,
+  "editable": false,
+  "tags": [
+    "fleet"
+  ],
+  "timezone": "browser",
   "refresh": "30s",
   "time": {
     "from": "now-1h",
     "to": "now"
   },
-  "timezone": "browser",
   "templating": {
     "list": [
       {
         "name": "host",
-        "label": "Machine",
-        "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "__LOKI_UID__"
-        },
-        "query": "label_values({source=~\".+\"}, host)",
-        "refresh": 2,
+        "label": "Host",
+        "type": "custom",
+        "query": "dorm,hip-japan,hip-usa,hip-fin,hip-nid,nuxt-fin",
+        "hide": 0,
+        "multi": true,
         "includeAll": true,
         "allValue": ".+",
-        "multi": true,
         "current": {
           "text": "All",
           "value": "$__all"
-        }
-      },
-      {
-        "name": "service",
-        "label": "Service",
-        "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "__LOKI_UID__"
         },
-        "query": "label_values({host=~\"$host\"}, service_name)",
-        "refresh": 2,
-        "includeAll": true,
-        "allValue": ".+",
-        "multi": true,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
-      },
-      {
-        "name": "source",
-        "label": "Source",
-        "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "__LOKI_UID__"
-        },
-        "query": "label_values({host=~\"$host\",service_name=~\"$service\"}, source)",
-        "refresh": 2,
-        "includeAll": true,
-        "allValue": ".+",
-        "multi": true,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
-      },
-      {
-        "name": "search",
-        "label": "Contains text",
-        "type": "textbox",
-        "query": "",
-        "current": {
-          "text": "",
-          "value": ""
-        }
+        "options": []
       }
     ]
   },
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/fleet-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Usage",
+      "url": "/d/fleet-usage",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Problems",
+      "url": "/d/fleet-problems",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Services",
+      "url": "/d/fleet-services",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "All logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
   "panels": [
     {
+      "title": "Successful SSH logins",
+      "type": "logs",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",host!=\"\",source=\"journal\",service_name=~\"ssh.*\"} |~ \"Accepted (publickey|password) for \"",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
       "id": 1,
-      "title": "Security search",
-      "type": "text",
       "gridPos": {
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 3
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "Choose a machine and time range; leave Service and Source set to All and Contains text empty for the full view. SSH probes often appear as **Connection closed \u2026 [preauth]**, without a failed-password message. These are connection/authentication events, not proof of successful access. Fail2ban **Found** means a filter matched; **Ban** means a ban action. Firewall events appear only when firewall logging is enabled."
+        "h": 8
       }
     },
     {
+      "title": "Failed SSH attempts",
+      "type": "logs",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",host!=\"\",service_name=~\"ssh.*\"} |~ \"(?i)failed (password|publickey|keyboard-interactive)|invalid user|authentication failure|maximum authentication attempts\"",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
       "id": 2,
-      "title": "SSH probes and authentication events",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "title": "Sudo",
       "type": "logs",
+      "description": "",
       "datasource": {
         "type": "loki",
         "uid": "__LOKI_UID__"
       },
-      "gridPos": {
-        "x": 0,
-        "y": 3,
-        "w": 24,
-        "h": 12
-      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)sshd|authentication failure|failed password|accepted publickey|accepted password|invalid user|preauth|connection closed|unable to negotiate|identification string\"",
+          "expr": "{host=~\"$host\",host!=\"\"} |~ \"(?i)sudo|; USER=.*; COMMAND=|pam_unix\\\\(sudo\"",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
           "queryType": "range"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "options": {
         "showTime": true,
         "showLabels": false,
         "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
-      }
-    },
-    {
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
       "id": 3,
-      "title": "Sudo and firewall",
-      "type": "logs",
-      "datasource": {
-        "type": "loki",
-        "uid": "__LOKI_UID__"
-      },
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 16,
         "w": 24,
-        "h": 12
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)sudo|ufw block|ufw reject\"",
-          "queryType": "range"
-        }
-      ],
-      "options": {
-        "showTime": true,
-        "showLabels": false,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
+        "h": 8
       }
     },
     {
-      "id": 4,
-      "title": "Fail2ban detections and ban actions",
+      "title": "New accounts",
       "type": "logs",
+      "description": "",
       "datasource": {
         "type": "loki",
         "uid": "__LOKI_UID__"
       },
-      "gridPos": {
-        "x": 0,
-        "y": 27,
-        "w": 24,
-        "h": 12
-      },
       "targets": [
         {
           "refId": "A",
-          "expr": "{host=~\"$host\",service_name=\"fail2ban\"} |= ${search:doublequote}",
+          "expr": "{host=~\"$host\",host!=\"\",service_name=~\"fleet-accounts(.service)?\"} |= \"new_local_account \"",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
           "queryType": "range"
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "options": {
         "showTime": true,
         "showLabels": false,
         "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "title": "Fail2ban",
+      "type": "logs",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",host!=\"\"} |~ \"(?i)fail2ban|\\\\bBan |\\\\bUnban \"",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 8
       }
     }
   ],
-  "links": [
-    {
-      "title": "Fleet Logs",
-      "url": "/d/fleet-logs",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
-    },
-    {
-      "title": "SSH and Security",
-      "url": "/d/fleet-security",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
-    }
-  ]
+  "annotations": {
+    "list": []
+  }
 }

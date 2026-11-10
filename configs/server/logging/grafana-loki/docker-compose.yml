@@ -20,12 +20,22 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/json/logs.json
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/json/fleet-overview.json
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: prometheus
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=30d", "--storage.tsdb.retention.size=10GB", "--web.enable-remote-write-receiver"]
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
   alloy:
     image: grafana/alloy:v1.21.3
     container_name: alloy
@@ -37,11 +47,16 @@ services:
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy
+      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/lib/fleet-monitoring/textfile:/var/lib/fleet-monitoring/textfile:ro
       - /var/log:/var/log:ro
       - /run/log/journal:/run/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
 volumes:
+  prometheus-data:
   loki-data:
   grafana-data:
   alloy-data:

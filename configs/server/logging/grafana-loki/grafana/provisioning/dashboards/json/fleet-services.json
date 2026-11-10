@@ -1,0 +1,209 @@
+{
+  "uid": "fleet-services",
+  "title": "Fleet Services",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "fleet"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "custom",
+        "query": "dorm,hip-japan,hip-usa,hip-fin,hip-nid,nuxt-fin",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "query": "label_values({host=~\"$host\",host!=\"\"}, service_name)",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "datasource": {
+          "type": "loki",
+          "uid": "__LOKI_UID__"
+        },
+        "refresh": 1
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/fleet-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Usage",
+      "url": "/d/fleet-usage",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Problems",
+      "url": "/d/fleet-problems",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Services",
+      "url": "/d/fleet-services",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "All logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "title": "Service logs",
+      "type": "logs",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",host!=\"\",service_name=~\"$service\"}",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "title": "Messages/second",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host,service_name)(rate({host=~\"$host\",host!=\"\",service_name=~\"$service\"}[1m]))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Errors/second",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(host,service_name)(rate({host=~\"$host\",host!=\"\",service_name=~\"$service\"} |~ \"(?i)error|failed|fatal|exception\" [1m]))",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ],
+  "annotations": {
+    "list": []
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "machines": {
+    "dorm": {},
+    "hip-japan": {},
+    "hip-usa": {},
+    "hip-fin": {},
+    "hip-nid": {},
+    "nuxt-fin": {}
+  },
+  "gpu_hosts": [
+    "dorm"
+  ]
+}

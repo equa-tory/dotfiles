@@ -1,0 +1,269 @@
+{
+  "groups": [
+    {
+      "name": "fleet-configuration",
+      "interval": "30s",
+      "rules": [
+        {
+          "record": "fleet_expected_gpu",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "dorm"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "hip-japan"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "hip-usa"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "hip-fin"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "hip-nid"
+          }
+        },
+        {
+          "record": "fleet_expected_host",
+          "expr": "vector(1)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_cpu_percent",
+          "expr": "vector(90)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_mbps",
+          "expr": "vector(100)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_outgoing_pps",
+          "expr": "vector(10000)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_used_percent",
+          "expr": "vector(70)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        },
+        {
+          "record": "fleet_threshold_disk_fill_hours",
+          "expr": "vector(24)",
+          "labels": {
+            "host": "nuxt-fin"
+          }
+        }
+      ]
+    }
+  ]
+}

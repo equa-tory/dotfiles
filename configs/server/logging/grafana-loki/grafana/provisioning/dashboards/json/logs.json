@@ -1,230 +1,230 @@
 {
   "uid": "fleet-logs",
   "title": "Fleet Logs",
-  "tags": [
-    "logs",
-    "fleet"
-  ],
   "schemaVersion": 39,
   "version": 1,
-  "editable": true,
+  "editable": false,
+  "tags": [
+    "fleet"
+  ],
+  "timezone": "browser",
   "refresh": "30s",
   "time": {
     "from": "now-1h",
     "to": "now"
   },
-  "timezone": "browser",
   "templating": {
     "list": [
       {
         "name": "host",
-        "label": "Machine",
-        "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "__LOKI_UID__"
-        },
-        "query": "label_values({source=~\".+\"}, host)",
-        "refresh": 2,
+        "label": "Host",
+        "type": "custom",
+        "query": "dorm,hip-japan,hip-usa,hip-fin,hip-nid,nuxt-fin",
+        "hide": 0,
+        "multi": true,
         "includeAll": true,
         "allValue": ".+",
-        "multi": true,
         "current": {
           "text": "All",
           "value": "$__all"
-        }
+        },
+        "options": []
       },
       {
         "name": "service",
         "label": "Service",
         "type": "query",
+        "query": "label_values({host=~\"$host\",host!=\"\"}, service_name)",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
         "datasource": {
           "type": "loki",
           "uid": "__LOKI_UID__"
         },
-        "query": "label_values({host=~\"$host\"}, service_name)",
-        "refresh": 2,
-        "includeAll": true,
-        "allValue": ".+",
-        "multi": true,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
+        "refresh": 1
       },
       {
         "name": "source",
         "label": "Source",
         "type": "query",
+        "query": "label_values({host=~\"$host\",host!=\"\"}, source)",
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
         "datasource": {
           "type": "loki",
           "uid": "__LOKI_UID__"
         },
-        "query": "label_values({host=~\"$host\",service_name=~\"$service\"}, source)",
-        "refresh": 2,
-        "includeAll": true,
-        "allValue": ".+",
-        "multi": true,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
+        "refresh": 1
       },
       {
-        "name": "search",
-        "label": "Contains text",
+        "name": "text",
+        "label": "Contains literal text",
         "type": "textbox",
         "query": "",
         "current": {
           "text": "",
           "value": ""
         }
+      },
+      {
+        "name": "preset",
+        "label": "Search preset",
+        "type": "custom",
+        "query": "All : |~ \".*\",Errors : |~ \"(?i)error|failed|fatal\",Exceptions : |~ \"(?i)exception|traceback|panic|segfault\",SSH : |~ \"(?i)sshd|ssh|Accepted publickey|Accepted password\",Sudo : |~ \"(?i)sudo|; USER=.*; COMMAND=\",Package updates : |~ \"(?i)apt|dpkg|upgrade|pacman|installed\",Journal : | source=\"journal\",Docker : | source=\"docker\"",
+        "current": {
+          "text": "All",
+          "value": "|~ \".*\""
+        },
+        "options": [
+          {
+            "text": "All",
+            "value": "|~ \".*\"",
+            "selected": true
+          },
+          {
+            "text": "Errors",
+            "value": "|~ \"(?i)error|failed|fatal\"",
+            "selected": false
+          },
+          {
+            "text": "Exceptions",
+            "value": "|~ \"(?i)exception|traceback|panic|segfault\"",
+            "selected": false
+          },
+          {
+            "text": "SSH",
+            "value": "|~ \"(?i)sshd|ssh|Accepted publickey|Accepted password\"",
+            "selected": false
+          },
+          {
+            "text": "Sudo",
+            "value": "|~ \"(?i)sudo|; USER=.*; COMMAND=\"",
+            "selected": false
+          },
+          {
+            "text": "Package updates",
+            "value": "|~ \"(?i)apt|dpkg|upgrade|pacman|installed\"",
+            "selected": false
+          },
+          {
+            "text": "Journal",
+            "value": "| source=\"journal\"",
+            "selected": false
+          },
+          {
+            "text": "Docker",
+            "value": "| source=\"docker\"",
+            "selected": false
+          }
+        ]
       }
     ]
   },
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/fleet-overview",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Usage",
+      "url": "/d/fleet-usage",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Problems",
+      "url": "/d/fleet-problems",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Services",
+      "url": "/d/fleet-services",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Security",
+      "url": "/d/fleet-security",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "All logs",
+      "url": "/d/fleet-logs",
+      "type": "link",
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Clear filters",
+      "url": "/d/fleet-logs?${host:queryparam}&var-service=%24__all&var-source=%24__all&var-text=&var-preset=%7C~%20%22.%2A%22",
+      "keepTime": true
+    }
+  ],
   "panels": [
     {
+      "title": "All logs",
+      "type": "logs",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "__LOKI_UID__"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{host=~\"$host\",host!=\"\",service_name=~\"$service\",source=~\"$source\"} ${preset:raw} | label_format __fleet_literal_match=`{{ contains (urldecode \"${text:percentencode}\") (__line__) }}` | __fleet_literal_match=\"true\" | drop __fleet_literal_match",
+          "legendFormat": "{{host}} {{mountpoint}} {{gpu}}",
+          "range": true,
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
       "id": 1,
-      "title": "Start here",
-      "type": "text",
       "gridPos": {
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 3
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "Choose a **Machine**, **Service**, and **Source**, then type into **Contains text**. Empty text shows everything. Change the time range at the top right. Expand a log line to inspect its labels.\n\n**dorm** = 192.168.1.50 \u00b7 **hip-nid** = VPS \u00b7 **journal** = system services/kernel \u00b7 **docker** = container output \u00b7 **file** = application log files. For advanced searches, open **Explore \u2192 Loki**."
-      }
-    },
-    {
-      "id": 2,
-      "title": "Log rate by machine / service",
-      "type": "timeseries",
-      "datasource": {
-        "type": "loki",
-        "uid": "__LOKI_UID__"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 3,
-        "w": 16,
-        "h": 7
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (host,service_name) (rate({host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote}[$__auto]))",
-          "queryType": "range",
-          "legendFormat": "{{host}} / {{service_name}}"
-        }
-      ],
-      "options": {}
-    },
-    {
-      "id": 3,
-      "title": "Error / failure matches per second",
-      "type": "timeseries",
-      "datasource": {
-        "type": "loki",
-        "uid": "__LOKI_UID__"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 3,
-        "w": 8,
-        "h": 7
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (host) (rate({host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote} |~ \"(?i)error|fatal|panic|failed\" [$__auto]))",
-          "queryType": "range",
-          "legendFormat": "{{host}} / {{service_name}}"
-        }
-      ],
-      "options": {}
-    },
-    {
-      "id": 4,
-      "title": "Search logs",
-      "type": "logs",
-      "datasource": {
-        "type": "loki",
-        "uid": "__LOKI_UID__"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 10,
-        "w": 24,
-        "h": 16
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} |= ${search:doublequote}",
-          "queryType": "range",
-          "legendFormat": "{{host}} / {{service_name}}"
-        }
-      ],
-      "options": {
-        "showTime": true,
-        "showLabels": false,
-        "showCommonLabels": false,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending",
-        "enableLogDetails": true,
-        "dedupStrategy": "none"
-      }
-    },
-    {
-      "id": 5,
-      "title": "Warnings and errors from the journal",
-      "type": "logs",
-      "datasource": {
-        "type": "loki",
-        "uid": "__LOKI_UID__"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 26,
-        "w": 24,
-        "h": 10
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{host=~\"$host\",service_name=~\"$service\",source=~\"$source\"} | level =~ \"warning|error|critical|alert|emergency\"",
-          "queryType": "range",
-          "legendFormat": "{{host}} / {{service_name}}"
-        }
-      ],
-      "options": {
-        "showTime": true,
-        "showLabels": false,
-        "showCommonLabels": false,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending",
-        "enableLogDetails": true,
-        "dedupStrategy": "none"
+        "h": 8
       }
     }
   ],
-  "links": [
-    {
-      "title": "Fleet Logs",
-      "url": "/d/fleet-logs",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
-    },
-    {
-      "title": "SSH and Security",
-      "url": "/d/fleet-security",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
-    }
-  ]
+  "annotations": {
+    "list": []
+  }
 }
